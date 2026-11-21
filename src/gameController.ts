@@ -127,7 +127,7 @@ export function initCyberDef(root: HTMLElement): void {
       </button>
 
       <!-- IN-GAME PAUSE & 3-2-1 RESUME COUNTDOWN OVERLAY -->
-      <div id="game-pause-overlay" class="hidden fixed inset-0 z-[9995] bg-black/75 backdrop-blur-sm flex-col items-center justify-center select-none">
+      <div id="game-pause-overlay" class="hidden fixed inset-0 z-[9995] bg-black/80 flex-col items-center justify-center select-none">
         <div class="absolute top-14 left-1/2 -translate-x-1/2 px-7 py-2 rounded-md border border-[#00ff41]/70 bg-[#05140b]/90 shadow-[0_0_28px_rgba(0,255,65,0.45)]">
           <span class="text-xl sm:text-2xl font-black font-code tracking-[0.35em] text-[#00ff41] drop-shadow-[0_0_10px_rgba(0,255,65,0.85)]">PAUSED</span>
         </div>
@@ -962,7 +962,12 @@ export function initCyberDef(root: HTMLElement): void {
       stopAndResetIngameBgm();
     }
 
+    // 씬별 독립 렌더링 루프 분리: 비활성 씬의 3D WebGL 및 2D 게임 루프를 즉시 정지해 GPU/CPU 점유 0% 유지
+    if (next !== 'room') {
+      room3d?.stop();
+    }
     if (next !== 'game') {
+      stageEngine?.stop();
       resetPauseState();
     }
 
@@ -978,9 +983,13 @@ export function initCyberDef(root: HTMLElement): void {
     } else {
       floatingSettingsBtn.classList.remove('visible');
     }
+
+    if (next === 'os') {
+      updateClock();
+    }
   };
 
-  // Real-time digital clock on OS taskbar
+  // Real-time digital clock on OS taskbar (only mutates DOM while OS scene is active)
   const clockEl = root.querySelector('#os-live-clock') as HTMLElement;
   const updateClock = () => {
     const d = new Date();
@@ -990,7 +999,9 @@ export function initCyberDef(root: HTMLElement): void {
     clockEl.textContent = `${hh}:${mm}:${ss}`;
   };
   updateClock();
-  window.setInterval(updateClock, 1000);
+  window.setInterval(() => {
+    if (currentScene === 'os') updateClock();
+  }, 1000);
 
   const typeText = (el: HTMLElement, text: string, speed: number, done?: () => void) => {
     el.textContent = '';

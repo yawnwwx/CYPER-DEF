@@ -125,9 +125,10 @@ export function runClickAimEngine(rt: StageRuntime): void {
     spawnTarget();
     spawnTarget();
 
-    let last = performance.now();
+    let last = 0;
     const loop = (now: number) => {
       if (rt.isDestroyed() || rt.isFinished()) return;
+      if (last === 0) last = now;
       const dt = Math.min((now - last) / 1000, 0.05);
       last = now;
 
@@ -141,7 +142,8 @@ export function runClickAimEngine(rt: StageRuntime): void {
         const t = targets[i];
         t.ttl -= dt;
         const ratio = Math.max(0, t.ttl / t.maxTtl);
-        t.ringEl.style.transform = `scale(${(0.55 + ratio * 0.95).toFixed(2)})`;
+        const sc = (0.55 + ratio * 0.95).toFixed(2);
+        t.ringEl.style.transform = `scale3d(${sc}, ${sc}, 1)`;
         t.el.style.opacity = `${Math.max(0.25, ratio + 0.15).toFixed(2)}`;
         if (t.ttl <= 0) {
           t.el.remove();
@@ -595,7 +597,7 @@ export function runClickAimEngine(rt: StageRuntime): void {
       <div id="s24-arena" class="relative w-full h-full overflow-hidden bg-[#080a10] cursor-crosshair select-none">
         <div id="s24-holes" class="absolute inset-0 pointer-events-none"></div>
         <button id="s24-target" type="button"
-          class="absolute -translate-x-1/2 -translate-y-1/2 px-5 py-2.5 rounded-lg border-2 border-[#ff0044] bg-[#2c0612]/95 text-[#ff3b6b] font-code font-black text-xl tracking-widest shadow-[0_0_26px_rgba(255,0,68,0.65)] cursor-crosshair">
+          class="absolute left-0 top-0 px-5 py-2.5 rounded-lg border-2 border-[#ff0044] bg-[#2c0612]/95 text-[#ff3b6b] font-code font-black text-xl tracking-widest shadow-[0_0_26px_rgba(255,0,68,0.65)] cursor-crosshair will-change-transform">
           ERROR
         </button>
       </div>
@@ -648,9 +650,10 @@ export function runClickAimEngine(rt: StageRuntime): void {
       }
     });
 
-    let last = performance.now();
+    let last = 0;
     const loop = (now: number) => {
       if (rt.isDestroyed() || rt.isFinished()) return;
+      if (last === 0) last = now;
       const dt = Math.min((now - last) / 1000, 0.05);
       last = now;
 
@@ -694,8 +697,7 @@ export function runClickAimEngine(rt: StageRuntime): void {
         vy = -Math.abs(vy);
       }
 
-      targetBtn.style.left = `${tx}px`;
-      targetBtn.style.top = `${ty}px`;
+      targetBtn.style.transform = `translate3d(${tx.toFixed(1)}px, ${ty.toFixed(1)}px, 0) translate(-50%, -50%)`;
 
       rt.ctx.clearRect(0, 0, w, h);
       rt.updateAndDrawParticles(dt);
@@ -754,7 +756,7 @@ export function runClickAimEngine(rt: StageRuntime): void {
 
       if (isCore) {
         el.className =
-          'absolute w-48 rounded-lg border-2 border-[#ff0026] bg-[#36040d] shadow-[0_0_32px_rgba(255,0,38,0.75)] overflow-hidden text-left cursor-pointer z-20 transition-transform hover:scale-105';
+          'absolute left-0 top-0 w-48 rounded-lg border-2 border-[#ff0026] bg-[#36040d] shadow-[0_0_32px_rgba(255,0,38,0.75)] overflow-hidden text-left cursor-pointer z-20 will-change-transform';
         el.innerHTML = `
           <div class="px-3 py-1.5 bg-[#ff0026] text-white text-xs font-black font-code flex items-center justify-between">
             <span>HOST_CORE.exe</span>
@@ -765,7 +767,7 @@ export function runClickAimEngine(rt: StageRuntime): void {
       } else {
         const d = decoyStyles[i % decoyStyles.length];
         el.className =
-          'absolute w-44 rounded-lg border overflow-hidden text-left cursor-pointer z-10 opacity-90 hover:opacity-100';
+          'absolute left-0 top-0 w-44 rounded-lg border overflow-hidden text-left cursor-pointer z-10 opacity-90 hover:opacity-100 will-change-transform';
         el.style.borderColor = d.border;
         el.style.backgroundColor = d.bg;
         el.innerHTML = `
@@ -776,14 +778,22 @@ export function runClickAimEngine(rt: StageRuntime): void {
         `;
       }
 
-      el.style.left = `${px}px`;
-      el.style.top = `${py}px`;
+      el.style.transform = `translate3d(${px.toFixed(1)}px, ${py.toFixed(1)}px, 0)`;
+
+      const popupObj: SplitPopup = {
+        el,
+        x: px,
+        y: py,
+        vx: Math.cos(angle) * spd,
+        vy: Math.sin(angle) * spd,
+        isCore,
+      };
 
       el.addEventListener('click', () => {
         if (rt.isFinished()) return;
         if (isCore) {
           audio.explosion();
-          rt.spawnBurst(px + 90, py + 45, 30, '#ff0026', '#00ff41');
+          rt.spawnBurst(popupObj.x + 90, popupObj.y + 45, 30, '#ff0026', '#00ff41');
           hits++;
           rt.setProgress((hits / goal) * 100, `${hits} / ${goal}`);
           if (hits >= goal) {
@@ -801,22 +811,16 @@ export function runClickAimEngine(rt: StageRuntime): void {
       });
 
       arena.appendChild(el);
-      popups.push({
-        el,
-        x: px,
-        y: py,
-        vx: Math.cos(angle) * spd,
-        vy: Math.sin(angle) * spd,
-        isCore,
-      });
+      popups.push(popupObj);
     }
   };
 
   spawnWave();
 
-  let last = performance.now();
+  let last = 0;
   const loop = (now: number) => {
     if (rt.isDestroyed() || rt.isFinished()) return;
+    if (last === 0) last = now;
     const dt = Math.min((now - last) / 1000, 0.05);
     last = now;
     const { w, h } = rt.getSize();
@@ -838,8 +842,7 @@ export function runClickAimEngine(rt: StageRuntime): void {
         p.y = h - 98;
         p.vy = -Math.abs(p.vy);
       }
-      p.el.style.left = `${p.x}px`;
-      p.el.style.top = `${p.y}px`;
+      p.el.style.transform = `translate3d(${p.x.toFixed(1)}px, ${p.y.toFixed(1)}px, 0)`;
     }
 
     rt.ctx.clearRect(0, 0, w, h);

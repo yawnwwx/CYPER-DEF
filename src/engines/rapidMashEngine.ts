@@ -77,9 +77,10 @@ export function runRapidMashEngine(rt: StageRuntime): void {
     spawnPopup();
     spawnPopup();
 
-    let last = performance.now();
+    let last = 0;
     const loop = (now: number) => {
       if (rt.isDestroyed() || rt.isFinished()) return;
+      if (last === 0) last = now;
       const dt = Math.min((now - last) / 1000, 0.05);
       last = now;
 
@@ -122,7 +123,7 @@ export function runRapidMashEngine(rt: StageRuntime): void {
         <div class="text-4xl font-black font-code text-[#00ff41] tabular-nums" id="s14-pct">0%</div>
 
         <div class="w-full max-w-xl h-7 rounded bg-[#111827] border-2 border-[#00ff41]/50 overflow-hidden p-1">
-          <div id="s14-bar" class="h-full bg-gradient-to-r from-[#00ff41] via-[#00e5ff] to-[#38bdf8] transition-all duration-75 rounded-sm" style="width:0%"></div>
+          <div id="s14-bar" class="h-full w-full origin-left bg-gradient-to-r from-[#00ff41] via-[#00e5ff] to-[#38bdf8] rounded-sm will-change-transform" style="transform:scaleX(0)"></div>
         </div>
 
         <div class="flex items-center gap-8 mt-2">
@@ -167,14 +168,14 @@ export function runRapidMashEngine(rt: StageRuntime): void {
         audio.hitSuccess();
         const sx = (Math.random() - 0.5) * 10;
         const sy = (Math.random() - 0.5) * 8;
-        wrap.style.transform = `translate(${sx}px, ${sy}px)`;
+        wrap.style.transform = `translate3d(${sx.toFixed(1)}px, ${sy.toFixed(1)}px, 0)`;
         rt.addTimeout(() => {
           wrap.style.transform = '';
         }, 55);
         highlightNext();
         if (progress >= 100) {
           pctEl.textContent = '100%';
-          barEl.style.width = '100%';
+          barEl.style.transform = 'scaleX(1)';
           rt.setProgress(100, '100%');
           rt.winStage();
         }
@@ -198,19 +199,25 @@ export function runRapidMashEngine(rt: StageRuntime): void {
       }
     });
 
-    let last = performance.now();
+    const totalDuration = 18.0;
+    let startTime = 0;
+    let last = 0;
     const loop = (now: number) => {
       if (rt.isDestroyed() || rt.isFinished()) return;
+      if (startTime === 0) {
+        startTime = now;
+        last = now;
+      }
       const dt = Math.min((now - last) / 1000, 0.05);
       last = now;
 
-      // Gentle decay to enforce continuous rapid alternation
+      // Gentle decay to enforce continuous rapid alternation; timer runs on exact wall-clock elapsed time
       progress = Math.max(0, progress - 5.2 * dt);
-      timeLeft = Math.max(0, timeLeft - dt);
+      timeLeft = Math.max(0, totalDuration - (now - startTime) / 1000);
 
       const rounded = Math.round(progress);
       pctEl.textContent = `${rounded}%`;
-      barEl.style.width = `${progress.toFixed(1)}%`;
+      barEl.style.transform = `scaleX(${(progress / 100).toFixed(4)})`;
       timerEl.textContent = `${timeLeft.toFixed(1)}s`;
       rt.setProgress(rounded, `${rounded}%`);
 
@@ -232,10 +239,10 @@ export function runRapidMashEngine(rt: StageRuntime): void {
 
   domLayer.innerHTML = `
     <div class="relative w-full h-full overflow-hidden flex items-center justify-center bg-[#090c12] select-none">
-      <div id="s22-wall-l" class="absolute top-0 bottom-0 left-0 bg-gradient-to-r from-[#5a071f] via-[#b80d48] to-[#ff0055] border-r-4 border-pink-300 shadow-[0_0_35px_rgba(255,0,85,0.65)] flex items-center justify-end pr-4 transition-none" style="width:14%">
+      <div id="s22-wall-l" class="absolute top-0 bottom-0 left-0 w-1/2 bg-gradient-to-r from-[#5a071f] via-[#b80d48] to-[#ff0055] border-r-4 border-pink-300 shadow-[0_0_35px_rgba(255,0,85,0.65)] flex items-center justify-end pr-4 will-change-transform" style="transform:translate3d(-72%,0,0)">
         <span class="text-xs font-black font-code text-white tracking-widest [writing-mode:vertical-rl]">PRESS WALL</span>
       </div>
-      <div id="s22-wall-r" class="absolute top-0 bottom-0 right-0 bg-gradient-to-l from-[#5a071f] via-[#b80d48] to-[#ff0055] border-l-4 border-pink-300 shadow-[0_0_35px_rgba(255,0,85,0.65)] flex items-center justify-start pl-4 transition-none" style="width:14%">
+      <div id="s22-wall-r" class="absolute top-0 bottom-0 right-0 w-1/2 bg-gradient-to-l from-[#5a071f] via-[#b80d48] to-[#ff0055] border-l-4 border-pink-300 shadow-[0_0_35px_rgba(255,0,85,0.65)] flex items-center justify-start pl-4 will-change-transform" style="transform:translate3d(72%,0,0)">
         <span class="text-xs font-black font-code text-white tracking-widest [writing-mode:vertical-rl]">PRESS WALL</span>
       </div>
 
@@ -276,19 +283,30 @@ export function runRapidMashEngine(rt: StageRuntime): void {
     }
   });
 
-  let last = performance.now();
+  const totalDuration = 10.0;
+  let startTime = 0;
+  let last = 0;
   const loop = (now: number) => {
     if (rt.isDestroyed() || rt.isFinished()) return;
+    if (startTime === 0) {
+      startTime = now;
+      last = now;
+    }
     const dt = Math.min((now - last) / 1000, 0.05);
     last = now;
 
-    // Walls steadily close inward, accelerating slightly near the end
-    const closeSpeed = 14.2 + (10 - surviveLeft) * 0.45;
-    wallPos += closeSpeed * dt;
-    surviveLeft = Math.max(0, surviveLeft - dt);
+    // Exact wall-clock survival countdown independent of FPS drops (pause-compensated via now)
+    const elapsedSec = Math.max(0, (now - startTime) / 1000);
+    surviveLeft = Math.max(0, totalDuration - elapsedSec);
 
-    wallL.style.width = `${wallPos.toFixed(2)}%`;
-    wallR.style.width = `${wallPos.toFixed(2)}%`;
+    // Walls steadily close inward, accelerating slightly near the end
+    const closeSpeed = 14.2 + (totalDuration - surviveLeft) * 0.45;
+    wallPos += closeSpeed * dt;
+
+    // GPU-composited wall slide (50%-wide panels translated cleanly without layout reflow)
+    const offsetPct = Math.max(0, 100 - wallPos * 2);
+    wallL.style.transform = `translate3d(-${offsetPct.toFixed(2)}%, 0, 0)`;
+    wallR.style.transform = `translate3d(${offsetPct.toFixed(2)}%, 0, 0)`;
     timerEl.textContent = `${surviveLeft.toFixed(1)}s`;
 
     if (wallPos >= 34) {

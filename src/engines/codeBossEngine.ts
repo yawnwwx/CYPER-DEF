@@ -162,9 +162,9 @@ export function runCodeBossEngine(rt: StageRuntime): void {
             <span class="text-sm font-black font-code text-white">CORE_01</span>
           </div>
           <div class="text-sm font-bold text-[#00e5ff] font-code">컴파일 게이지가 초록색 안전 구역에 들어올 때 ENTER!</div>
-          <div class="relative w-full h-11 rounded-lg bg-[#121622] border-2 border-white/25 overflow-hidden">
+          <div id="s10-track" class="relative w-full h-11 rounded-lg bg-[#121622] border-2 border-white/25 overflow-hidden">
             <div class="absolute top-0 bottom-0 left-[38%] w-[24%] bg-[#00ff41]/30 border-x-2 border-[#00ff41]"></div>
-            <div id="s10-cursor" class="absolute top-0 bottom-0 w-3 bg-[#ff007f] shadow-[0_0_16px_#ff007f]" style="left:0%"></div>
+            <div id="s10-cursor" class="absolute top-0 bottom-0 left-0 w-3 bg-[#ff007f] shadow-[0_0_16px_#ff007f] will-change-transform" style="transform:translate3d(0,0,0)"></div>
           </div>
           <button id="s10-strike-btn" class="cyber-btn px-8 py-3 text-sm font-black cursor-pointer">
             [ ENTER ] 컴파일 타격 실행!
@@ -178,6 +178,7 @@ export function runCodeBossEngine(rt: StageRuntime): void {
     const badgeEl = domLayer.querySelector('#s10-badge') as HTMLElement;
     const p1El = domLayer.querySelector('#s10-p1') as HTMLElement;
     const p2El = domLayer.querySelector('#s10-p2') as HTMLElement;
+    const trackEl = domLayer.querySelector('#s10-track') as HTMLElement;
     const cursorEl = domLayer.querySelector('#s10-cursor') as HTMLElement;
     const strikeBtn = domLayer.querySelector('#s10-strike-btn') as HTMLButtonElement;
     const msgEl = domLayer.querySelector('#s10-msg') as HTMLElement;
@@ -256,9 +257,10 @@ export function runCodeBossEngine(rt: StageRuntime): void {
       '보스 공격용 파이썬 코드 입력 후 Enter...'
     );
 
-    let last = performance.now();
+    let last = 0;
     const loop = (now: number) => {
       if (rt.isDestroyed() || rt.isFinished()) return;
+      if (last === 0) last = now;
       const dt = Math.min((now - last) / 1000, 0.05);
       last = now;
       if (phase === 2) {
@@ -270,7 +272,8 @@ export function runCodeBossEngine(rt: StageRuntime): void {
           gaugePos = 0;
           gaugeDir = 1;
         }
-        cursorEl.style.left = `${gaugePos}%`;
+        const trackW = trackEl.clientWidth || 540;
+        cursorEl.style.transform = `translate3d(${((gaugePos / 100) * trackW).toFixed(1)}px, 0, 0)`;
       }
       const { w, h } = rt.getSize();
       rt.ctx.clearRect(0, 0, w, h);
@@ -536,9 +539,9 @@ export function runCodeBossEngine(rt: StageRuntime): void {
 
       <div id="s30-p4" class="hidden w-full max-w-lg flex flex-col items-center gap-4 px-6">
         <div class="text-sm font-bold text-[#00e5ff]">초고속 타이밍 바 중앙(초록 구간)에서 ENTER!</div>
-        <div class="relative w-full h-10 bg-[#121620] border-2 border-white/30 rounded overflow-hidden">
+        <div id="s30-track" class="relative w-full h-10 bg-[#121620] border-2 border-white/30 rounded overflow-hidden">
           <div class="absolute top-0 bottom-0 left-[38%] w-[24%] bg-[#00ff41]/30 border-x-2 border-[#00ff41]"></div>
-          <div id="s30-bar-cursor" class="absolute top-0 bottom-0 w-2.5 bg-[#ff007f] shadow-[0_0_15px_#ff007f]" style="left:0%"></div>
+          <div id="s30-bar-cursor" class="absolute top-0 bottom-0 left-0 w-2.5 bg-[#ff007f] shadow-[0_0_15px_#ff007f] will-change-transform" style="transform:translate3d(0,0,0)"></div>
         </div>
         <button id="s30-enter-btn" class="cyber-btn px-8 py-2.5 text-sm font-bold cursor-pointer">ENTER 셧다운</button>
       </div>
@@ -557,6 +560,7 @@ export function runCodeBossEngine(rt: StageRuntime): void {
   const p3Wrap = domLayer.querySelector('#s30-p3') as HTMLElement;
   const pyCodeEl = domLayer.querySelector('#s30-py-code') as HTMLElement;
   const p4Wrap = domLayer.querySelector('#s30-p4') as HTMLElement;
+  const barTrack = domLayer.querySelector('#s30-track') as HTMLElement;
   const barCursor = domLayer.querySelector('#s30-bar-cursor') as HTMLElement;
   const shutdownText = domLayer.querySelector('#s30-shutdown-text') as HTMLElement;
 
@@ -678,9 +682,10 @@ export function runCodeBossEngine(rt: StageRuntime): void {
     }
   });
 
-  let last = performance.now();
+  let last = 0;
   const loop = (now: number) => {
     if (rt.isDestroyed() || rt.isFinished()) return;
+    if (last === 0) last = now;
     const dt = Math.min((now - last) / 1000, 0.05);
     last = now;
     if (phase === 4) {
@@ -692,7 +697,8 @@ export function runCodeBossEngine(rt: StageRuntime): void {
         timingPos = 0;
         timingDir = 1;
       }
-      barCursor.style.left = `${timingPos}%`;
+      const trackW = barTrack.clientWidth || 460;
+      barCursor.style.transform = `translate3d(${((timingPos / 100) * trackW).toFixed(1)}px, 0, 0)`;
     }
     rt.setRaf(loop);
   };

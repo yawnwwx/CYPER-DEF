@@ -18,8 +18,9 @@ const _moveDelta = new THREE.Vector3();
 const _targetLookQuat = new THREE.Quaternion();
 const _lookMat = new THREE.Matrix4();
 const _up = new THREE.Vector3(0, 1, 0);
+const _euler = new THREE.Euler(0, 0, 0, 'YXZ');
 
-// Create a curved plane geometry bending gently toward the viewer (+Z)
+// Create a gently curved widescreen panel geometry bending toward the viewer (+Z)
 function createCurvedScreenGeometry(width: number, height: number, radius: number, segments = 24): THREE.BufferGeometry {
   const geo = new THREE.PlaneGeometry(width, height, segments, 1);
   const pos = geo.attributes.position;
@@ -28,6 +29,34 @@ function createCurvedScreenGeometry(width: number, height: number, radius: numbe
     const theta = x / radius;
     const zOffset = radius * (1 - Math.cos(theta));
     pos.setZ(i, zOffset);
+  }
+  geo.computeVertexNormals();
+  return geo;
+}
+
+// Create a soft organic wrinkled blanket surface for natural fabric folds
+function createWrinkledClothGeometry(
+  width: number,
+  depth: number,
+  segX = 24,
+  segZ = 24,
+  amplitude = 0.026,
+  seed = 1
+): THREE.BufferGeometry {
+  const geo = new THREE.PlaneGeometry(width, depth, segX, segZ);
+  geo.rotateX(-Math.PI / 2);
+  const pos = geo.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i);
+    const z = pos.getZ(i);
+    const nx = x / (width * 0.5);
+    const nz = z / (depth * 0.5);
+    const ridge1 = Math.sin(x * 7.5 + z * 4.2 + seed) * 0.55;
+    const ridge2 = Math.cos(x * 13.0 - z * 6.5 + seed * 2.1) * 0.3;
+    const ridge3 = Math.sin((x + z) * 18.0 + seed * 0.7) * 0.15;
+    const edgeFade = Math.max(0.18, 1 - Math.pow(nx, 4) * 0.55 - Math.pow(nz, 4) * 0.45);
+    const y = (ridge1 + ridge2 + ridge3) * amplitude * edgeFade;
+    pos.setY(i, y);
   }
   geo.computeVertexNormals();
   return geo;
@@ -45,11 +74,16 @@ export class DeveloperRoom3D {
   private isSoftwareGl = false;
   private frameId = 0;
   private running = false;
+  private pausedRendered = false;
   private lastTime = performance.now();
+  private dayBgColor = new THREE.Color(0xe9eef4);
+  private darkBgColor = new THREE.Color(0x000000);
+  private dayFog = new THREE.FogExp2(0xeae6df, 0.011);
+  private darkFog = new THREE.FogExp2(0x000000, 0.08);
 
   public mode: RoomMode = 'paused';
-  private yaw = -0.45;
-  private pitch = -0.04;
+  private yaw = -0.18;
+  private pitch = -0.06;
   private lookSensitivity = 1.0;
   private keys: Record<string, boolean> = {};
   private isDragging = false;
@@ -67,7 +101,9 @@ export class DeveloperRoom3D {
   private sunLight!: THREE.DirectionalLight;
   private ceilingLight!: THREE.PointLight;
   private deskLampLight!: THREE.PointLight;
+  private pcInteriorLight!: THREE.PointLight;
   private pcInteriorLedMat!: THREE.MeshStandardMaterial;
+  private pcStripLedMat!: THREE.MeshStandardMaterial;
   private monitorScreenMesh!: THREE.Mesh;
   private monitorOnMat!: THREE.MeshStandardMaterial;
   private monitorOffMat!: THREE.MeshStandardMaterial;
@@ -77,19 +113,21 @@ export class DeveloperRoom3D {
 
   // Shared procedural textures
   private floorWoodTex!: THREE.CanvasTexture;
+  private floorBumpTex!: THREE.CanvasTexture;
   private wallPaperTex!: THREE.CanvasTexture;
-  private accentWallTex!: THREE.CanvasTexture;
-  private lightOakTex!: THREE.CanvasTexture;
-  private warmOakTex!: THREE.CanvasTexture;
+  private wallBumpTex!: THREE.CanvasTexture;
+  private deskOakTex!: THREE.CanvasTexture;
+  private bookshelfOakTex!: THREE.CanvasTexture;
   private darkWalnutTex!: THREE.CanvasTexture;
-  private blanketFabricTex!: THREE.CanvasTexture;
-  private sheetFabricTex!: THREE.CanvasTexture;
-  private rugFabricTex!: THREE.CanvasTexture;
+  private linenGrayTex!: THREE.CanvasTexture;
+  private knitBlanketTex!: THREE.CanvasTexture;
+  private vintageRugTex!: THREE.CanvasTexture;
+  private meshBinAlphaTex!: THREE.CanvasTexture;
 
-  // Camera transition targets
-  private zoomTargetPos = new THREE.Vector3(0, 1.24, -1.66);
-  private zoomLookTarget = new THREE.Vector3(0, 1.24, -2.5);
-  private zoomOutPos = new THREE.Vector3(0, 1.46, -0.78);
+  // Camera transition targets (aligned with the wall-flush desk & single central wide monitor)
+  private zoomTargetPos = new THREE.Vector3(0, 1.18, -2.18);
+  private zoomLookTarget = new THREE.Vector3(0, 1.16, -2.96);
+  private zoomOutPos = new THREE.Vector3(0, 1.46, -1.02);
   private zoomCallback: (() => void) | null = null;
 
   constructor(container: HTMLElement, callbacks: RoomCallbacks) {
@@ -118,7 +156,8 @@ export class DeveloperRoom3D {
     h: number,
     drawFn: (ctx: CanvasRenderingContext2D, w: number, h: number) => void,
     repeatX = 1,
-    repeatY = 1
+    repeatY = 1,
+    isColorMap = true
   ): THREE.CanvasTexture {
     const c = document.createElement('canvas');
     c.width = w;
@@ -126,7 +165,9 @@ export class DeveloperRoom3D {
     const ctx = c.getContext('2d')!;
     drawFn(ctx, w, h);
     const tex = new THREE.CanvasTexture(c);
-    tex.colorSpace = THREE.SRGBColorSpace;
+    if (isColorMap) {
+      tex.colorSpace = THREE.SRGBColorSpace;
+    }
     tex.anisotropy = Math.min(8, this.renderer.capabilities.getMaxAnisotropy());
     if (repeatX > 1 || repeatY > 1) {
       tex.wrapS = THREE.RepeatWrapping;
@@ -136,27 +177,26 @@ export class DeveloperRoom3D {
     return tex;
   }
 
-  // Deterministic pseudo-random helper for clean repeatable procedural textures
   private hash2d(i: number, seed = 17): number {
     const x = Math.sin(i * 127.1 + seed * 311.7) * 43758.5453;
     return x - Math.floor(x);
   }
 
   private createProceduralTextures(): void {
-    // 1. Warm Hardwood Floor Texture (staggered planks + wood grain + grooves)
+    // 1. Warm Honey-Oak Hardwood Planks (albedo + bump map for wood plank seams & grain)
     this.floorWoodTex = this.createCanvasTexture(
       512,
       512,
       (ctx, w, h) => {
-        ctx.fillStyle = '#c29b70';
+        ctx.fillStyle = '#b48354';
         ctx.fillRect(0, 0, w, h);
         const plankRows = 8;
         const plankH = h / plankRows;
-        const baseTones = ['#c79e72', '#b98e62', '#cfa77b', '#bf9468', '#c59c70', '#b58a5e'];
+        const baseTones = ['#bc8b5b', '#a87648', '#c69767', '#b18050', '#c09060', '#9f6e42'];
 
         for (let r = 0; r < plankRows; r++) {
           const y0 = r * plankH;
-          const jointX = Math.floor(((r * 173 + 90) % (w - 80)) + 40);
+          const jointX = Math.floor(((r * 197 + 84) % (w - 96)) + 48);
           const segments: Array<[number, number, string]> = [
             [0, jointX, baseTones[r % baseTones.length]],
             [jointX, w - jointX, baseTones[(r + 3) % baseTones.length]],
@@ -166,154 +206,371 @@ export class DeveloperRoom3D {
             ctx.fillStyle = tone;
             ctx.fillRect(sx, y0, sw, plankH);
 
-            // Flowing wood grain lines
-            for (let g = 0; g < 16; g++) {
-              const gy = y0 + 3 + (g / 16) * (plankH - 6);
-              ctx.strokeStyle = g % 3 === 0 ? 'rgba(92, 58, 28, 0.16)' : 'rgba(245, 222, 190, 0.13)';
-              ctx.lineWidth = 1 + (g % 2) * 0.6;
+            // Subtle longitudinal shade variation
+            const shadeGrad = ctx.createLinearGradient(sx, y0, sx + sw, y0 + plankH);
+            shadeGrad.addColorStop(0, 'rgba(255, 236, 206, 0.08)');
+            shadeGrad.addColorStop(0.5, 'rgba(0, 0, 0, 0.0)');
+            shadeGrad.addColorStop(1, 'rgba(62, 34, 14, 0.12)');
+            ctx.fillStyle = shadeGrad;
+            ctx.fillRect(sx, y0, sw, plankH);
+
+            // Flowing organic wood grain fibers
+            for (let g = 0; g < 18; g++) {
+              const gy = y0 + 2.5 + (g / 18) * (plankH - 5);
+              ctx.strokeStyle =
+                g % 3 === 0 ? 'rgba(72, 42, 18, 0.22)' : 'rgba(248, 224, 188, 0.13)';
+              ctx.lineWidth = 0.8 + (g % 3) * 0.45;
               ctx.beginPath();
               ctx.moveTo(sx, gy);
-              for (let px = sx; px <= sx + sw; px += 24) {
-                const wave = Math.sin(px * 0.025 + r * 1.9 + g) * 2.1;
+              for (let px = sx; px <= sx + sw; px += 20) {
+                const wave = Math.sin(px * 0.022 + r * 2.1 + g * 0.85) * 2.4;
                 ctx.lineTo(px, gy + wave);
               }
               ctx.stroke();
             }
 
-            // Occasional subtle knot
-            if ((r + sx) % 3 === 0 && sw > 120) {
-              const kx = sx + sw * 0.55;
-              const ky = y0 + plankH * 0.52;
-              ctx.strokeStyle = 'rgba(84, 52, 24, 0.22)';
-              ctx.lineWidth = 1.2;
+            // Natural oak knot
+            if ((r + sx) % 3 === 0 && sw > 110) {
+              const kx = sx + sw * 0.54;
+              const ky = y0 + plankH * 0.5;
+              ctx.strokeStyle = 'rgba(64, 36, 14, 0.34)';
+              ctx.lineWidth = 1.4;
               ctx.beginPath();
-              ctx.ellipse(kx, ky, 9, 4, 0.1, 0, Math.PI * 2);
+              ctx.ellipse(kx, ky, 9, 3.8, 0.08, 0, Math.PI * 2);
               ctx.stroke();
+              ctx.fillStyle = 'rgba(62, 35, 14, 0.25)';
+              ctx.beginPath();
+              ctx.ellipse(kx, ky, 4, 1.8, 0.08, 0, Math.PI * 2);
+              ctx.fill();
             }
           }
 
-          // Horizontal & vertical plank grooves
-          ctx.fillStyle = 'rgba(66, 42, 20, 0.45)';
+          // Deep beveled plank grooves
+          ctx.fillStyle = 'rgba(48, 28, 12, 0.62)';
+          ctx.fillRect(0, y0 + plankH - 2, w, 2);
+          ctx.fillStyle = 'rgba(255, 234, 200, 0.12)';
+          ctx.fillRect(0, y0, w, 1);
+          ctx.fillStyle = 'rgba(48, 28, 12, 0.55)';
+          ctx.fillRect(jointX - 1, y0, 2, plankH);
+        }
+      },
+      3,
+      3,
+      true
+    );
+
+    this.floorBumpTex = this.createCanvasTexture(
+      512,
+      512,
+      (ctx, w, h) => {
+        ctx.fillStyle = '#c8c8c8';
+        ctx.fillRect(0, 0, w, h);
+        const plankRows = 8;
+        const plankH = h / plankRows;
+        for (let r = 0; r < plankRows; r++) {
+          const y0 = r * plankH;
+          const jointX = Math.floor(((r * 197 + 84) % (w - 96)) + 48);
+          for (let g = 0; g < 14; g++) {
+            const gy = y0 + (g / 14) * plankH;
+            ctx.fillStyle = g % 2 === 0 ? 'rgba(255,255,255,0.08)' : 'rgba(60,60,60,0.08)';
+            ctx.fillRect(0, gy, w, 1.5);
+          }
+          ctx.fillStyle = '#242424';
           ctx.fillRect(0, y0 + plankH - 2, w, 2);
           ctx.fillRect(jointX - 1, y0, 2, plankH);
         }
       },
       3,
-      3
+      3,
+      false
     );
 
-    // 2. Wallpaper Texture (bright warm ivory & light gray with subtle micro-noise)
-    const buildWallTex = (baseHex: string, noiseRgb: string) =>
+    // 2. Warm Ivory / Light-Gray Textured Matte Plaster Wallpaper + Bump Map
+    this.wallPaperTex = this.createCanvasTexture(
+      256,
+      256,
+      (ctx, w, h) => {
+        ctx.fillStyle = '#e4ddd1';
+        ctx.fillRect(0, 0, w, h);
+        // Soft mottled plaster clouds
+        for (let i = 0; i < 42; i++) {
+          const cx = this.hash2d(i, 3) * w;
+          const cy = this.hash2d(i, 13) * h;
+          const rad = 18 + this.hash2d(i, 23) * 34;
+          const grad = ctx.createRadialGradient(cx, cy, 2, cx, cy, rad);
+          const warm = i % 2 === 0 ? 'rgba(198, 188, 172, 0.14)' : 'rgba(252, 249, 244, 0.16)';
+          grad.addColorStop(0, warm);
+          grad.addColorStop(1, 'rgba(228, 221, 209, 0)');
+          ctx.fillStyle = grad;
+          ctx.fillRect(cx - rad, cy - rad, rad * 2, rad * 2);
+        }
+        // Fine plaster micro-speckle
+        for (let i = 0; i < 3200; i++) {
+          const nx = Math.floor(this.hash2d(i, 7) * w);
+          const ny = Math.floor(this.hash2d(i, 19) * h);
+          const alpha = 0.025 + this.hash2d(i, 31) * 0.05;
+          ctx.fillStyle = i % 2 === 0 ? `rgba(116, 108, 96, ${alpha})` : `rgba(255, 253, 248, ${alpha})`;
+          ctx.fillRect(nx, ny, 2, 2);
+        }
+      },
+      4,
+      2,
+      true
+    );
+
+    this.wallBumpTex = this.createCanvasTexture(
+      256,
+      256,
+      (ctx, w, h) => {
+        ctx.fillStyle = '#808080';
+        ctx.fillRect(0, 0, w, h);
+        for (let i = 0; i < 2600; i++) {
+          const nx = Math.floor(this.hash2d(i, 41) * w);
+          const ny = Math.floor(this.hash2d(i, 53) * h);
+          const v = Math.floor(110 + this.hash2d(i, 67) * 44);
+          ctx.fillStyle = `rgb(${v},${v},${v})`;
+          ctx.fillRect(nx, ny, 2, 2);
+        }
+      },
+      4,
+      2,
+      false
+    );
+
+    // 3. Natural Furniture Wood Grain Textures (Desk Oak, Bookshelf Oak, Dark Walnut)
+    const buildWoodTex = (
+      baseHex: string,
+      grainDark: string,
+      grainLight: string,
+      plankCount = 0
+    ) =>
       this.createCanvasTexture(
-        256,
+        512,
         256,
         (ctx, w, h) => {
           ctx.fillStyle = baseHex;
           ctx.fillRect(0, 0, w, h);
-          // Subtle vertical linen weave
-          for (let x = 0; x < w; x += 4) {
-            ctx.fillStyle = x % 8 === 0 ? 'rgba(255,255,255,0.06)' : `rgba(${noiseRgb}, 0.035)`;
-            ctx.fillRect(x, 0, 1, h);
+          if (plankCount > 0) {
+            const ph = h / plankCount;
+            for (let p = 0; p < plankCount; p++) {
+              ctx.fillStyle = p % 2 === 0 ? 'rgba(255, 238, 210, 0.06)' : 'rgba(65, 38, 16, 0.06)';
+              ctx.fillRect(0, p * ph, w, ph);
+              ctx.fillStyle = 'rgba(56, 32, 12, 0.25)';
+              ctx.fillRect(0, p * ph, w, 1.5);
+            }
           }
-          // Fine matte plaster speckle noise
-          for (let i = 0; i < 2400; i++) {
-            const nx = Math.floor(this.hash2d(i, 3) * w);
-            const ny = Math.floor(this.hash2d(i, 11) * h);
-            const alpha = 0.02 + this.hash2d(i, 29) * 0.045;
-            ctx.fillStyle = i % 2 === 0 ? `rgba(${noiseRgb}, ${alpha})` : `rgba(255,255,255,${alpha})`;
-            ctx.fillRect(nx, ny, 2, 2);
-          }
-        },
-        4,
-        2
-      );
-
-    this.wallPaperTex = buildWallTex('#efece5', '120, 114, 102');
-    this.accentWallTex = buildWallTex('#e1e7ee', '96, 110, 128');
-
-    // 3. Natural Furniture Wood Grain Textures
-    const buildFurnitureWood = (baseHex: string, grainDark: string, grainLight: string) =>
-      this.createCanvasTexture(
-        256,
-        256,
-        (ctx, w, h) => {
-          ctx.fillStyle = baseHex;
-          ctx.fillRect(0, 0, w, h);
-          for (let i = 0; i < 64; i++) {
-            const y = (i / 64) * h;
+          for (let i = 0; i < 72; i++) {
+            const y = (i / 72) * h;
             ctx.strokeStyle = i % 3 === 0 ? grainDark : grainLight;
-            ctx.lineWidth = 1 + (i % 3) * 0.5;
+            ctx.lineWidth = 0.9 + (i % 3) * 0.55;
             ctx.beginPath();
             ctx.moveTo(0, y);
-            for (let x = 0; x <= w; x += 16) {
-              const offset = Math.sin(x * 0.03 + i * 0.7) * 2.5 + Math.cos(x * 0.012 + i) * 1.5;
+            for (let x = 0; x <= w; x += 18) {
+              const offset = Math.sin(x * 0.02 + i * 0.6) * 2.8 + Math.cos(x * 0.008 + i) * 1.4;
               ctx.lineTo(x, y + offset);
             }
             ctx.stroke();
           }
         },
-        2,
-        2
+        1,
+        1,
+        true
       );
 
-    this.lightOakTex = buildFurnitureWood('#dcc4a4', 'rgba(128, 92, 54, 0.16)', 'rgba(255, 244, 228, 0.14)');
-    this.warmOakTex = buildFurnitureWood('#a98158', 'rgba(72, 46, 22, 0.22)', 'rgba(232, 202, 166, 0.14)');
-    this.darkWalnutTex = buildFurnitureWood('#755438', 'rgba(42, 25, 12, 0.26)', 'rgba(182, 144, 108, 0.14)');
+    this.deskOakTex = buildWoodTex('#cca06b', 'rgba(84, 52, 22, 0.22)', 'rgba(255, 238, 212, 0.14)', 4);
+    this.bookshelfOakTex = buildWoodTex('#b68b5a', 'rgba(72, 44, 18, 0.22)', 'rgba(246, 222, 188, 0.12)', 0);
+    this.darkWalnutTex = buildWoodTex('#6e4c31', 'rgba(34, 19, 8, 0.28)', 'rgba(176, 136, 98, 0.14)', 0);
 
-    // 4. Woven Fabric Grid Textures (blanket, sheets, rectangular rug)
-    const buildFabricTex = (baseHex: string, threadA: string, threadB: string, step = 4, rep = 4) =>
-      this.createCanvasTexture(
-        256,
-        256,
-        (ctx, w, h) => {
-          ctx.fillStyle = baseHex;
-          ctx.fillRect(0, 0, w, h);
-          for (let y = 0; y < h; y += step) {
-            ctx.fillStyle = threadA;
-            ctx.fillRect(0, y, w, 1);
-          }
-          for (let x = 0; x < w; x += step) {
-            ctx.fillStyle = threadB;
-            ctx.fillRect(x, 0, 1, h);
-          }
-          for (let i = 0; i < 900; i++) {
-            const fx = Math.floor(this.hash2d(i, 7) * w);
-            const fy = Math.floor(this.hash2d(i, 19) * h);
-            ctx.fillStyle = i % 2 === 0 ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)';
-            ctx.fillRect(fx, fy, 2, 2);
-          }
-        },
-        rep,
-        rep
-      );
-
-    this.blanketFabricTex = buildFabricTex('#3e648c', 'rgba(255,255,255,0.08)', 'rgba(18,32,54,0.14)', 4, 4);
-    this.sheetFabricTex = buildFabricTex('#f5f7fa', 'rgba(180,190,204,0.12)', 'rgba(255,255,255,0.18)', 4, 5);
-    this.rugFabricTex = this.createCanvasTexture(
+    // 4. Matte Linen Bedding Texture (cool warm-gray linen weave)
+    this.linenGrayTex = this.createCanvasTexture(
       256,
       256,
       (ctx, w, h) => {
-        ctx.fillStyle = '#c8c2b8';
+        ctx.fillStyle = '#c9ccd0';
         ctx.fillRect(0, 0, w, h);
-        // Woven grid pattern
-        for (let y = 0; y < h; y += 5) {
-          ctx.fillStyle = y % 10 === 0 ? 'rgba(110, 102, 92, 0.16)' : 'rgba(255, 252, 245, 0.15)';
-          ctx.fillRect(0, y, w, 2);
+        for (let y = 0; y < h; y += 3) {
+          ctx.fillStyle = y % 6 === 0 ? 'rgba(255,255,255,0.14)' : 'rgba(82,88,96,0.09)';
+          ctx.fillRect(0, y, w, 1);
         }
-        for (let x = 0; x < w; x += 5) {
-          ctx.fillStyle = x % 10 === 0 ? 'rgba(95, 88, 80, 0.14)' : 'rgba(255, 255, 255, 0.12)';
-          ctx.fillRect(x, 0, 2, h);
+        for (let x = 0; x < w; x += 3) {
+          ctx.fillStyle = x % 6 === 0 ? 'rgba(255,255,255,0.1)' : 'rgba(72,78,86,0.08)';
+          ctx.fillRect(x, 0, 1, h);
         }
-        // Subtle modern geometric border frame
-        ctx.strokeStyle = 'rgba(64, 82, 98, 0.42)';
-        ctx.lineWidth = 8;
-        ctx.strokeRect(14, 14, w - 28, h - 28);
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+        // Soft natural fabric creases
+        for (let i = 0; i < 16; i++) {
+          const sx = this.hash2d(i, 9) * w;
+          const sy = this.hash2d(i, 21) * h;
+          ctx.strokeStyle = i % 2 === 0 ? 'rgba(92,98,108,0.12)' : 'rgba(255,255,255,0.15)';
+          ctx.lineWidth = 6;
+          ctx.beginPath();
+          ctx.moveTo(sx, sy);
+          ctx.quadraticCurveTo(sx + 25, sy + 18, sx + 55, sy + 6);
+          ctx.stroke();
+        }
+      },
+      3,
+      3,
+      true
+    );
+
+    // 5. Chunky Oatmeal Knit Throw Blanket Texture (matches rumpled knit blanket in reference)
+    this.knitBlanketTex = this.createCanvasTexture(
+      256,
+      256,
+      (ctx, w, h) => {
+        ctx.fillStyle = '#c5b091';
+        ctx.fillRect(0, 0, w, h);
+        const colStep = 12;
+        const rowStep = 10;
+        for (let y = 0; y < h; y += rowStep) {
+          for (let x = 0; x < w; x += colStep) {
+            // V-stitch cable knit loop
+            ctx.strokeStyle = 'rgba(248, 238, 222, 0.42)';
+            ctx.lineWidth = 2.2;
+            ctx.beginPath();
+            ctx.moveTo(x + 2, y + 2);
+            ctx.lineTo(x + colStep * 0.5, y + rowStep - 2);
+            ctx.lineTo(x + colStep - 2, y + 2);
+            ctx.stroke();
+
+            ctx.strokeStyle = 'rgba(96, 74, 48, 0.34)';
+            ctx.lineWidth = 1.4;
+            ctx.beginPath();
+            ctx.moveTo(x + 1, y + 4);
+            ctx.lineTo(x + colStep * 0.5, y + rowStep);
+            ctx.lineTo(x + colStep - 1, y + 4);
+            ctx.stroke();
+          }
+        }
+      },
+      4,
+      4,
+      true
+    );
+
+    // 6. Vintage Patterned Persian / Bohemian Floor Rug Texture (matches reference rug!)
+    this.vintageRugTex = this.createCanvasTexture(
+      512,
+      512,
+      (ctx, w, h) => {
+        // Warm distressed cream/stone base
+        ctx.fillStyle = '#c8beae';
+        ctx.fillRect(0, 0, w, h);
+
+        // Outer dark charcoal & muted crimson borders
+        ctx.strokeStyle = '#3a2d28';
+        ctx.lineWidth = 22;
+        ctx.strokeRect(16, 16, w - 32, h - 32);
+
+        ctx.strokeStyle = '#7d443a';
+        ctx.lineWidth = 10;
+        ctx.strokeRect(36, 36, w - 72, h - 72);
+
+        ctx.strokeStyle = '#4c3e37';
+        ctx.lineWidth = 3;
+        ctx.strokeRect(52, 52, w - 104, h - 104);
+
+        // Decorative border motifs
+        ctx.fillStyle = '#6e3a32';
+        for (let i = 44; i < w - 44; i += 24) {
+          ctx.fillRect(i - 4, 11, 8, 10);
+          ctx.fillRect(i - 4, h - 21, 8, 10);
+          ctx.fillRect(11, i - 4, 10, 8);
+          ctx.fillRect(w - 21, i - 4, 10, 8);
+        }
+
+        // Inner vintage patterned field
+        ctx.fillStyle = '#b9ad9b';
+        ctx.fillRect(58, 58, w - 116, h - 116);
+
+        // Subtle ornamental diamond lattice
+        ctx.strokeStyle = 'rgba(74, 52, 44, 0.35)';
         ctx.lineWidth = 2;
-        ctx.strokeRect(24, 24, w - 48, h - 48);
+        const step = 36;
+        for (let y = 70; y <= h - 70; y += step) {
+          for (let x = 70; x <= w - 70; x += step) {
+            ctx.beginPath();
+            ctx.moveTo(x, y - 12);
+            ctx.lineTo(x + 12, y);
+            ctx.lineTo(x, y + 12);
+            ctx.lineTo(x - 12, y);
+            ctx.closePath();
+            ctx.stroke();
+
+            ctx.fillStyle = (x + y) % 72 === 0 ? 'rgba(122, 62, 52, 0.4)' : 'rgba(56, 62, 70, 0.32)';
+            ctx.beginPath();
+            ctx.arc(x, y, 4.5, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+
+        // Central distressed medallion
+        const cx = w / 2;
+        const cy = h / 2;
+        ctx.fillStyle = 'rgba(116, 56, 48, 0.65)';
+        ctx.beginPath();
+        ctx.moveTo(cx, cy - 92);
+        ctx.lineTo(cx + 68, cy);
+        ctx.lineTo(cx, cy + 92);
+        ctx.lineTo(cx - 68, cy);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.strokeStyle = '#dfd5c5';
+        ctx.lineWidth = 4;
+        ctx.stroke();
+
+        ctx.fillStyle = '#38302d';
+        ctx.beginPath();
+        ctx.moveTo(cx, cy - 42);
+        ctx.lineTo(cx + 30, cy);
+        ctx.lineTo(cx, cy + 42);
+        ctx.lineTo(cx - 30, cy);
+        ctx.closePath();
+        ctx.fill();
+
+        // Woven carpet fiber noise overlay
+        for (let i = 0; i < 4500; i++) {
+          const rx = Math.floor(this.hash2d(i, 11) * w);
+          const ry = Math.floor(this.hash2d(i, 29) * h);
+          ctx.fillStyle = i % 2 === 0 ? 'rgba(255,250,240,0.09)' : 'rgba(38,28,22,0.09)';
+          ctx.fillRect(rx, ry, 2, 2);
+        }
       },
       1,
-      1
+      1,
+      true
+    );
+
+    // 7. Wire-Mesh Wastebasket Alpha Texture (crisp perforated metal grid)
+    this.meshBinAlphaTex = this.createCanvasTexture(
+      256,
+      256,
+      (ctx, w, h) => {
+        ctx.fillStyle = '#000000';
+        ctx.fillRect(0, 0, w, h);
+        // Solid top & bottom rim bands
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, w, 16);
+        ctx.fillRect(0, h - 18, w, 18);
+        // Fine diagonal wire mesh lattice
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 2.4;
+        const gap = 10;
+        for (let i = -h; i < w + h; i += gap) {
+          ctx.beginPath();
+          ctx.moveTo(i, 0);
+          ctx.lineTo(i + h, h);
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(i + h, 0);
+          ctx.lineTo(i, h);
+          ctx.stroke();
+        }
+      },
+      3,
+      2,
+      false
     );
   }
 
@@ -321,10 +578,10 @@ export class DeveloperRoom3D {
     this.isSoftwareGl = this.detectSoftwareGl();
 
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0xdbeafe);
-    this.scene.fog = new THREE.FogExp2(0xeef2f6, 0.012);
+    this.scene.background = this.dayBgColor;
+    this.scene.fog = this.dayFog;
 
-    this.camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.05, 45);
+    this.camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.05, 45);
 
     this.renderer = new THREE.WebGLRenderer({
       antialias: !this.isSoftwareGl,
@@ -332,86 +589,103 @@ export class DeveloperRoom3D {
     });
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.06;
-    this.renderer.setPixelRatio(this.isSoftwareGl ? 1 : Math.min(window.devicePixelRatio, 2));
+    this.renderer.toneMappingExposure = 1.05;
+    // Cap pixel ratio to 1.5 for crisp photorealistic quality with lower GPU fill-rate load
+    this.renderer.setPixelRatio(this.isSoftwareGl ? 1 : Math.min(window.devicePixelRatio, 1.5));
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.shadowMap.enabled = !this.isSoftwareGl;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // Static furniture & sunlight: bake shadow map once instead of redrawing every frame
+    this.renderer.shadowMap.autoUpdate = false;
 
     this.container.innerHTML = '';
     this.container.appendChild(this.renderer.domElement);
 
     const pmrem = new THREE.PMREMGenerator(this.renderer);
     this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-    this.scene.environmentIntensity = 0.52;
+    this.scene.environmentIntensity = 0.44;
     pmrem.dispose();
 
     this.createProceduralTextures();
-    this.buildDaylightRig();
+    this.buildPhotorealDaylightRig();
     this.buildRoomShell();
-    this.buildCompositeBed();
-    this.buildCompositeDeskAndChair();
+    this.buildCompositeBedAndNightstand();
+    this.buildWallFlushDeskAndChair();
     this.buildCompositeComputerStation();
+    this.buildDeskPropsAndCables();
     this.buildCompositeNotebook();
-    this.buildDeskLampAndMug();
-    this.buildCompositeWardrobeAndBookshelf();
+    this.buildBookshelvesAndWastebasket();
     this.buildCompositeDoorAndWindow();
-    this.buildWallPosters();
+    this.buildWallPostersAndFrames();
 
     this.resetOpeningAtBed();
 
     if (!this.isSoftwareGl) {
+      this.renderer.shadowMap.needsUpdate = true;
       this.renderer.compile(this.scene, this.camera);
     }
     this.bindEvents();
   }
 
-  private buildDaylightRig(): void {
-    // Soft baseline fill
-    this.ambientLight = new THREE.AmbientLight(0xfff9f2, 0.42);
+  private buildPhotorealDaylightRig(): void {
+    // Soft neutral baseline ambient
+    this.ambientLight = new THREE.AmbientLight(0xfff5e8, 0.28);
     this.scene.add(this.ambientLight);
 
-    // Indirect bounce: ceiling cool-white sky bounce + warm oak floor reflection
-    this.hemiLight = new THREE.HemisphereLight(0xf2f7ff, 0xd4b692, 0.88);
+    // Indoor bounce: cool daytime window sky above + warm oak hardwood reflection below
+    this.hemiLight = new THREE.HemisphereLight(0xeef5ff, 0x9b744c, 0.85);
     this.scene.add(this.hemiLight);
 
-    // Sunlight streaming softly through the window (x = -3.36, z = -0.75) into the room
-    this.sunLight = new THREE.DirectionalLight(0xfff2dc, 1.75);
-    this.sunLight.position.set(-4.8, 4.1, -0.45);
-    this.sunLight.target.position.set(0.6, 0.3, -1.2);
+    // Warm afternoon sunlight entering obliquely from the RIGHT window (x = +3.18, z = -1.25)
+    this.sunLight = new THREE.DirectionalLight(0xffe7c4, 2.35);
+    this.sunLight.position.set(5.4, 3.65, -0.55);
+    this.sunLight.target.position.set(-1.1, 0.4, -1.05);
     if (!this.isSoftwareGl) {
       this.sunLight.castShadow = true;
       this.sunLight.shadow.mapSize.set(1024, 1024);
       this.sunLight.shadow.camera.near = 0.5;
-      this.sunLight.shadow.camera.far = 14;
-      this.sunLight.shadow.camera.left = -4.2;
-      this.sunLight.shadow.camera.right = 4.2;
-      this.sunLight.shadow.camera.top = 4.2;
-      this.sunLight.shadow.camera.bottom = -4.2;
+      this.sunLight.shadow.camera.far = 14.5;
+      this.sunLight.shadow.camera.left = -4.0;
+      this.sunLight.shadow.camera.right = 4.0;
+      this.sunLight.shadow.camera.top = 3.8;
+      this.sunLight.shadow.camera.bottom = -3.8;
       this.sunLight.shadow.bias = -0.0005;
-      this.sunLight.shadow.normalBias = 0.02;
-      this.sunLight.shadow.radius = 2.5;
+      this.sunLight.shadow.normalBias = 0.022;
+      this.sunLight.shadow.radius = 2.8;
     }
     this.scene.add(this.sunLight);
     this.scene.add(this.sunLight.target);
 
-    // Overhead LED ceiling fill (no shadow map for crisp 60FPS budget)
-    this.ceilingLight = new THREE.PointLight(0xfffaf0, 1.15, 13, 1.4);
-    this.ceilingLight.position.set(0, 2.86, 0);
+    // Subtle overhead daylight bounce fill (keeps shadows natural and readable)
+    this.ceilingLight = new THREE.PointLight(0xfff6e8, 0.72, 12, 1.5);
+    this.ceilingLight.position.set(0.2, 2.85, 0.15);
     this.scene.add(this.ceilingLight);
 
-    // Warm desk lamp PointLight casting cozy incandescent pool over desk & notebook
-    this.deskLampLight = new THREE.PointLight(0xffcf8b, 1.85, 4.8, 1.5);
-    this.deskLampLight.position.set(-0.92, 1.22, -2.32);
+    // Warm incandescent desk/nightstand architect lamp PointLight (left of desk)
+    this.deskLampLight = new THREE.PointLight(0xffcb84, 1.45, 4.2, 1.6);
+    this.deskLampLight.position.set(-1.12, 1.24, -2.72);
     this.scene.add(this.deskLampLight);
+
+    // Subtle cool-white interior glow from the tempered-glass custom PC tower (right of desk)
+    this.pcInteriorLight = new THREE.PointLight(0xd9ecff, 0.95, 2.4, 1.8);
+    this.pcInteriorLight.position.set(0.66, 1.06, -2.70);
+    this.scene.add(this.pcInteriorLight);
   }
 
   private buildRoomShell(): void {
-    // Semi-gloss hardwood floor (roughness: 0.45)
+    const roomW = 6.4;
+    const roomD = 6.4;
+    const roomH = 3.05;
+    const halfW = roomW * 0.5;
+    const halfD = roomD * 0.5;
+
+    // Warm semi-gloss oak hardwood floor (roughness: 0.45)
     const floor = new THREE.Mesh(
-      new THREE.PlaneGeometry(6.8, 6.8),
+      new THREE.PlaneGeometry(roomW, roomD),
       new THREE.MeshStandardMaterial({
         map: this.floorWoodTex,
+        bumpMap: this.floorBumpTex,
+        bumpScale: 0.012,
         roughness: 0.45,
         metalness: 0.04,
       })
@@ -420,241 +694,293 @@ export class DeveloperRoom3D {
     floor.receiveShadow = true;
     this.scene.add(floor);
 
-    // Matte textured wallpaper (roughness: 0.9)
+    // Matte textured ivory/light-gray wallpaper (roughness: 0.9)
     const wallMat = new THREE.MeshStandardMaterial({
       map: this.wallPaperTex,
-      roughness: 0.9,
-      metalness: 0.0,
-    });
-    const accentWallMat = new THREE.MeshStandardMaterial({
-      map: this.accentWallTex,
+      bumpMap: this.wallBumpTex,
+      bumpScale: 0.008,
       roughness: 0.9,
       metalness: 0.0,
     });
     const trimMat = new THREE.MeshStandardMaterial({
-      color: 0xf8fafc,
-      roughness: 0.48,
+      color: 0xf4f1eb,
+      roughness: 0.52,
       metalness: 0.02,
     });
     const ceilingMat = new THREE.MeshStandardMaterial({
-      color: 0xf6f7f9,
+      color: 0xf2efe9,
       roughness: 0.9,
       metalness: 0.0,
     });
 
-    const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(6.8, 6.8), ceilingMat);
-    ceiling.position.y = 3.1;
+    const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(roomW, roomD), ceilingMat);
+    ceiling.position.y = roomH;
     ceiling.rotation.x = Math.PI / 2;
     this.scene.add(ceiling);
 
-    // Sleek Modern Ceiling LED Panel Fixture (metallic housing + glowing acrylic diffuser)
+    // Flush-mount minimalist ceiling fixture
     const fixtureGroup = new THREE.Group();
-    fixtureGroup.position.set(0, 3.06, 0);
+    fixtureGroup.position.set(0, roomH - 0.03, -0.2);
     const housingMat = new THREE.MeshStandardMaterial({
-      color: 0xd1d5db,
+      color: 0xd6dae0,
       roughness: 0.25,
       metalness: 0.8,
     });
-    const frameOuter = new THREE.Mesh(new THREE.BoxGeometry(0.92, 0.055, 0.54), housingMat);
+    const frameRing = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.3, 0.045, 24), housingMat);
     const diffuser = new THREE.Mesh(
-      new THREE.BoxGeometry(0.84, 0.035, 0.46),
+      new THREE.CylinderGeometry(0.24, 0.24, 0.02, 24),
       new THREE.MeshStandardMaterial({
         color: 0xffffff,
-        emissive: 0xfff6e5,
-        emissiveIntensity: 0.85,
-        roughness: 0.3,
+        emissive: 0xfff3de,
+        emissiveIntensity: 0.65,
+        roughness: 0.4,
       })
     );
-    diffuser.position.y = -0.025;
-    fixtureGroup.add(frameOuter, diffuser);
+    diffuser.position.y = -0.022;
+    fixtureGroup.add(frameRing, diffuser);
     this.scene.add(fixtureGroup);
 
-    const walls: Array<[number, number, number, number, THREE.Material]> = [
-      [0, 1.55, -3.4, 0, accentWallMat],
-      [0, 1.55, 3.4, Math.PI, wallMat],
-      [-3.4, 1.55, 0, Math.PI / 2, wallMat],
-      [3.4, 1.55, 0, -Math.PI / 2, wallMat],
+    const walls: Array<[number, number, number, number]> = [
+      [0, roomH * 0.5, -halfD, 0],
+      [0, roomH * 0.5, halfD, Math.PI],
+      [-halfW, roomH * 0.5, 0, Math.PI / 2],
+      [halfW, roomH * 0.5, 0, -Math.PI / 2],
     ];
-    for (const [x, y, z, ry, mat] of walls) {
-      const w = new THREE.Mesh(new THREE.PlaneGeometry(6.8, 3.1), mat);
+    for (const [x, y, z, ry] of walls) {
+      const w = new THREE.Mesh(new THREE.PlaneGeometry(roomW, roomH), wallMat);
       w.position.set(x, y, z);
       w.rotation.y = ry;
       w.receiveShadow = true;
       this.scene.add(w);
 
-      // Baseboard & crown molding
-      const baseboard = new THREE.Mesh(new THREE.BoxGeometry(6.8, 0.11, 0.035), trimMat);
-      baseboard.position.set(x, 0.055, z);
+      // Clean architectural baseboards & subtle crown molding
+      const baseboard = new THREE.Mesh(new THREE.BoxGeometry(roomW, 0.095, 0.028), trimMat);
+      baseboard.position.set(x, 0.048, z);
       baseboard.rotation.y = ry;
       baseboard.receiveShadow = true;
       this.scene.add(baseboard);
 
-      const crown = new THREE.Mesh(new THREE.BoxGeometry(6.8, 0.06, 0.03), trimMat);
-      crown.position.set(x, 3.07, z);
+      const crown = new THREE.Mesh(new THREE.BoxGeometry(roomW, 0.05, 0.024), trimMat);
+      crown.position.set(x, roomH - 0.025, z);
       crown.rotation.y = ry;
       this.scene.add(crown);
     }
 
-    // Center Rectangular Woven Rug (matte fabric roughness: 0.9)
+    // Vintage Patterned Floor Rug under desk & chair (matte fabric roughness: 0.9)
     const rug = new THREE.Mesh(
-      new THREE.BoxGeometry(2.55, 0.016, 1.85),
+      new THREE.BoxGeometry(2.58, 0.014, 2.08),
       new THREE.MeshStandardMaterial({
-        map: this.rugFabricTex,
+        map: this.vintageRugTex,
         roughness: 0.9,
         metalness: 0.0,
       })
     );
-    rug.position.set(0.25, 0.008, 0.15);
+    rug.position.set(0.02, 0.007, -1.68);
     rug.receiveShadow = true;
     this.scene.add(rug);
   }
 
-  private buildCompositeBed(): void {
+  private buildCompositeBedAndNightstand(): void {
+    // Cozy Upholstered Bed tucked against the LEFT wall (back-left zone, matching reference image)
     const bed = new THREE.Group();
-    bed.position.set(-2.15, 0, 1.78);
+    bed.position.set(-2.36, 0, -1.94);
 
-    const oakMat = new THREE.MeshStandardMaterial({
-      map: this.warmOakTex,
+    const frameFabricMat = new THREE.MeshStandardMaterial({
+      map: this.linenGrayTex,
+      color: 0x6c7178,
+      roughness: 0.9,
+      metalness: 0.0,
+    });
+    const oakLegMat = new THREE.MeshStandardMaterial({
+      map: this.bookshelfOakTex,
       roughness: 0.45,
       metalness: 0.04,
     });
     const sheetMat = new THREE.MeshStandardMaterial({
-      map: this.sheetFabricTex,
+      map: this.linenGrayTex,
+      color: 0xe6e7e8,
       roughness: 0.9,
       metalness: 0.0,
     });
-    const blanketMat = new THREE.MeshStandardMaterial({
-      map: this.blanketFabricTex,
+    const duvetMat = new THREE.MeshStandardMaterial({
+      map: this.linenGrayTex,
+      color: 0xbcc1c6,
       roughness: 0.9,
       metalness: 0.0,
     });
-    const blanketInnerMat = new THREE.MeshStandardMaterial({
-      map: this.sheetFabricTex,
-      color: 0xdbe5f0,
+    const knitThrowMat = new THREE.MeshStandardMaterial({
+      map: this.knitBlanketTex,
       roughness: 0.9,
       metalness: 0.0,
     });
-    const pillowMat = new THREE.MeshStandardMaterial({
-      map: this.sheetFabricTex,
-      color: 0xffffff,
+    const accentPillowMat = new THREE.MeshStandardMaterial({
+      map: this.linenGrayTex,
+      color: 0xc2b299,
       roughness: 0.9,
       metalness: 0.0,
     });
 
-    // 4 Tapered Wooden Legs
-    for (const lx of [-0.66, 0.66]) {
-      for (const lz of [-1.0, 1.0]) {
-        const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.046, 0.034, 0.24, 14), oakMat);
-        leg.position.set(lx, 0.12, lz);
+    // 4 Short Tapered Wooden Bed Legs
+    for (const lx of [-0.62, 0.62]) {
+      for (const lz of [-0.94, 0.94]) {
+        const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.036, 0.028, 0.14, 12), oakLegMat);
+        leg.position.set(lx, 0.07, lz);
         leg.castShadow = true;
         leg.receiveShadow = true;
         bed.add(leg);
       }
     }
 
-    // Wooden Frame Platform & Slatted Headboard
-    const platform = new THREE.Mesh(new THREE.BoxGeometry(1.46, 0.13, 2.14), oakMat);
-    platform.position.y = 0.285;
-    platform.castShadow = true;
-    platform.receiveShadow = true;
-    bed.add(platform);
+    // Upholstered Dark-Gray Platform Base
+    const baseBox = new THREE.Mesh(new THREE.BoxGeometry(1.42, 0.24, 2.08), frameFabricMat);
+    baseBox.position.y = 0.24;
+    baseBox.castShadow = true;
+    baseBox.receiveShadow = true;
+    bed.add(baseBox);
 
-    const hbTop = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.08, 0.085), oakMat);
-    hbTop.position.set(0, 0.96, 1.04);
-    hbTop.castShadow = true;
-    bed.add(hbTop);
-    for (let sx = -0.6; sx <= 0.6; sx += 0.2) {
-      const slat = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.68, 10), oakMat);
-      slat.position.set(sx, 0.61, 1.04);
-      slat.castShadow = true;
-      bed.add(slat);
-    }
+    // Subtle Padded Headboard against the back wall
+    const headboard = new THREE.Mesh(new THREE.BoxGeometry(1.44, 0.56, 0.09), frameFabricMat);
+    headboard.position.set(0, 0.58, -1.0);
+    headboard.castShadow = true;
+    headboard.receiveShadow = true;
+    bed.add(headboard);
 
-    // Thick Layered Mattress + Plush Topper
-    const mattress = new THREE.Mesh(new THREE.BoxGeometry(1.36, 0.21, 2.0), sheetMat);
-    mattress.position.set(0, 0.445, -0.02);
+    // Plush White/Ivory Mattress
+    const mattress = new THREE.Mesh(new THREE.BoxGeometry(1.36, 0.22, 1.98), sheetMat);
+    mattress.position.set(0, 0.46, 0.02);
     mattress.castShadow = true;
     mattress.receiveShadow = true;
+    bed.add(mattress);
 
-    const topper = new THREE.Mesh(new THREE.BoxGeometry(1.38, 0.055, 2.02), sheetMat);
-    topper.position.set(0, 0.565, -0.02);
-    topper.receiveShadow = true;
+    // Wrinkled Light-Gray Duvet Layer
+    const duvetBase = new THREE.Mesh(new THREE.BoxGeometry(1.38, 0.075, 1.38), duvetMat);
+    duvetBase.position.set(0, 0.59, 0.26);
+    duvetBase.castShadow = true;
+    duvetBase.receiveShadow = true;
+    bed.add(duvetBase);
 
-    // Draped Fabric Blanket + Slightly Folded Back Flap
-    const blanket = new THREE.Mesh(new THREE.BoxGeometry(1.42, 0.075, 1.24), blanketMat);
-    blanket.position.set(0, 0.615, -0.39);
-    blanket.castShadow = true;
-    blanket.receiveShadow = true;
+    const duvetTopCloth = new THREE.Mesh(
+      createWrinkledClothGeometry(1.38, 1.38, 22, 22, 0.024, 2.3),
+      duvetMat
+    );
+    duvetTopCloth.position.set(0, 0.635, 0.26);
+    duvetTopCloth.castShadow = true;
+    duvetTopCloth.receiveShadow = true;
+    bed.add(duvetTopCloth);
 
-    // Side overhangs so the blanket wraps naturally over the mattress edges
-    for (const sx of [-0.7, 0.7]) {
-      const sideDrape = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.22, 1.22), blanketMat);
-      sideDrape.position.set(sx, 0.51, -0.39);
-      sideDrape.castShadow = true;
-      bed.add(sideDrape);
-    }
+    // Rumpled Chunky Oatmeal Knit Throw Blanket draped diagonally over the bed & cascading over the foot
+    const knitTop = new THREE.Mesh(
+      createWrinkledClothGeometry(1.22, 1.02, 26, 22, 0.036, 5.1),
+      knitThrowMat
+    );
+    knitTop.position.set(0.05, 0.665, 0.46);
+    knitTop.rotation.y = 0.14;
+    knitTop.castShadow = true;
+    knitTop.receiveShadow = true;
+    bed.add(knitTop);
 
-    // Folded-back duvet cuff (slightly angled for natural lived-in look)
-    const foldedCuff = new THREE.Mesh(new THREE.BoxGeometry(1.43, 0.05, 0.28), blanketInnerMat);
-    foldedCuff.position.set(0, 0.655, 0.14);
-    foldedCuff.rotation.x = -0.08;
-    foldedCuff.castShadow = true;
-    foldedCuff.receiveShadow = true;
+    // Natural bunched knit fold & front drape cascading toward the hardwood floor
+    const knitRidge = new THREE.Mesh(new THREE.CylinderGeometry(0.068, 0.082, 1.15, 14), knitThrowMat);
+    knitRidge.rotation.z = Math.PI / 2;
+    knitRidge.rotation.y = 0.16;
+    knitRidge.scale.set(1, 1, 0.55);
+    knitRidge.position.set(0.06, 0.64, 0.88);
+    knitRidge.castShadow = true;
+    bed.add(knitRidge);
 
-    const blanketRoll = new THREE.Mesh(new THREE.CylinderGeometry(0.044, 0.044, 1.43, 14), blanketMat);
-    blanketRoll.rotation.z = Math.PI / 2;
-    blanketRoll.position.set(0, 0.635, 0.26);
+    const knitCascade = new THREE.Mesh(
+      createWrinkledClothGeometry(0.86, 0.54, 16, 12, 0.028, 8.4),
+      knitThrowMat
+    );
+    knitCascade.rotation.x = Math.PI * 0.44;
+    knitCascade.rotation.z = -0.08;
+    knitCascade.position.set(0.08, 0.36, 1.04);
+    knitCascade.castShadow = true;
+    knitCascade.receiveShadow = true;
+    bed.add(knitCascade);
 
-    // 2 Sculpted Fabric Pillows
-    for (const [px, rotY] of [
-      [-0.33, 0.08],
-      [0.33, -0.06],
-    ] as Array<[number, number]>) {
-      const pillow = new THREE.Mesh(new THREE.SphereGeometry(0.24, 18, 14), pillowMat);
-      pillow.scale.set(1.22, 0.36, 0.8);
-      pillow.position.set(px, 0.645, 0.72);
-      pillow.rotation.set(0.2, rotY, 0);
+    const knitSideDrape = new THREE.Mesh(
+      createWrinkledClothGeometry(0.58, 0.44, 14, 10, 0.022, 3.7),
+      knitThrowMat
+    );
+    knitSideDrape.rotation.z = -Math.PI * 0.46;
+    knitSideDrape.position.set(0.71, 0.43, 0.48);
+    knitSideDrape.castShadow = true;
+    bed.add(knitSideDrape);
+
+    // 2 Main Sleeping Pillows + 1 Warm Taupe Accent Pillow (matching reference image)
+    for (const [px, pz, rotY, mat] of [
+      [-0.31, -0.68, 0.08, sheetMat],
+      [0.31, -0.66, -0.1, sheetMat],
+      [-0.24, -0.34, 0.24, accentPillowMat],
+    ] as Array<[number, number, number, THREE.Material]>) {
+      const pillow = new THREE.Mesh(new THREE.SphereGeometry(0.24, 18, 14), mat);
+      pillow.scale.set(1.24, 0.35, 0.82);
+      pillow.position.set(px, 0.64, pz);
+      pillow.rotation.set(-0.18, rotY, 0);
       pillow.castShadow = true;
       pillow.receiveShadow = true;
       bed.add(pillow);
     }
 
-    bed.add(mattress, topper, blanket, foldedCuff, blanketRoll);
     this.scene.add(bed);
+
+    // Small Wooden Nightstand between Bed and Wall-Flush Desk (supports the architect lamp)
+    const nightstand = new THREE.Group();
+    nightstand.position.set(-1.38, 0, -2.94);
+
+    const nsBody = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.52, 0.42), oakLegMat);
+    nsBody.position.y = 0.26;
+    nsBody.castShadow = true;
+    nsBody.receiveShadow = true;
+    nightstand.add(nsBody);
+
+    const grooveMat = new THREE.MeshStandardMaterial({ color: 0x241c16, roughness: 0.7 });
+    for (const dy of [0.16, 0.37]) {
+      const drFront = new THREE.Mesh(new THREE.BoxGeometry(0.37, 0.16, 0.018), oakLegMat);
+      drFront.position.set(0, dy, 0.212);
+      drFront.receiveShadow = true;
+      const pullSlot = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.018, 0.014), grooveMat);
+      pullSlot.position.set(0, dy + 0.055, 0.22);
+      nightstand.add(drFront, pullSlot);
+    }
+    this.scene.add(nightstand);
   }
 
-  private buildCompositeDeskAndChair(): void {
+  private buildWallFlushDeskAndChair(): void {
+    // Wall-Flush Computer Desk (back edge at Z = -3.17 against Z = -3.20 wall!)
     const desk = new THREE.Group();
-    desk.position.set(0, 0, -2.5);
+    desk.position.set(0, 0, -2.74);
 
-    // Semi-gloss light oak wood grain (roughness: 0.45)
     const woodTopMat = new THREE.MeshStandardMaterial({
-      map: this.lightOakTex,
+      map: this.deskOakTex,
       roughness: 0.45,
       metalness: 0.04,
     });
-    // Brushed metallic steel & chrome (metalness: 0.8, roughness: 0.25)
-    const steelMat = new THREE.MeshStandardMaterial({
-      color: 0x3b4758,
+    const drawerWoodMat = new THREE.MeshStandardMaterial({
+      map: this.bookshelfOakTex,
+      roughness: 0.45,
+      metalness: 0.04,
+    });
+    const brushedMetalMat = new THREE.MeshStandardMaterial({
+      color: 0xa6b0bc,
       roughness: 0.25,
       metalness: 0.8,
     });
-    const chromeMat = new THREE.MeshStandardMaterial({
-      color: 0xdbe4ee,
-      roughness: 0.22,
-      metalness: 0.85,
+    const darkSteelMat = new THREE.MeshStandardMaterial({
+      color: 0x353c46,
+      roughness: 0.28,
+      metalness: 0.8,
     });
-    const mousepadMat = new THREE.MeshStandardMaterial({
-      map: this.blanketFabricTex,
-      color: 0x1e293b,
-      roughness: 0.9,
-      metalness: 0.0,
+    const recessSlotMat = new THREE.MeshStandardMaterial({
+      color: 0x1b1511,
+      roughness: 0.75,
     });
 
-    // Beveled Desk Tabletop via ExtrudeGeometry
+    // Thick Beveled Solid-Oak Tabletop (2.16m x 0.86m)
+    const hw = 1.07;
+    const hd = 0.42;
     const topShape = new THREE.Shape();
-    const hw = 1.15;
-    const hd = 0.46;
     topShape.moveTo(-hw, -hd);
     topShape.lineTo(hw, -hd);
     topShape.lineTo(hw, hd);
@@ -662,176 +988,246 @@ export class DeveloperRoom3D {
     topShape.closePath();
 
     const topGeo = new THREE.ExtrudeGeometry(topShape, {
-      depth: 0.04,
+      depth: 0.036,
       bevelEnabled: true,
-      bevelThickness: 0.01,
-      bevelSize: 0.01,
+      bevelThickness: 0.008,
+      bevelSize: 0.008,
       bevelSegments: 2,
     });
     topGeo.rotateX(Math.PI / 2);
     const tabletop = new THREE.Mesh(topGeo, woodTopMat);
-    tabletop.position.y = 0.78;
+    tabletop.position.y = 0.76;
     tabletop.castShadow = true;
     tabletop.receiveShadow = true;
     desk.add(tabletop);
 
-    // 4 Metallic Cylindrical Legs + Leveler Foot Pads + Crossbars
-    for (const lx of [-1.04, 1.04]) {
-      for (const lz of [-0.38, 0.38]) {
-        const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.023, 0.72, 14), steelMat);
-        leg.position.set(lx, 0.37, lz);
+    // Under-frame steel apron bar for structural realism
+    const apron = new THREE.Mesh(new THREE.BoxGeometry(1.96, 0.032, 0.04), darkSteelMat);
+    apron.position.set(0, 0.70, -0.32);
+    desk.add(apron);
+
+    // 4 Sturdy Brushed Metallic Cylindrical Legs + Foot Levelers
+    for (const lx of [-0.96, 0.96]) {
+      for (const lz of [-0.34, 0.34]) {
+        const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.024, 0.715, 16), brushedMetalMat);
+        leg.position.set(lx, 0.365, lz);
         leg.castShadow = true;
-        const foot = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.039, 0.02, 14), chromeMat);
-        foot.position.set(lx, 0.01, lz);
-        desk.add(leg, foot);
+        leg.receiveShadow = true;
+        const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.034, 0.034, 0.018, 14), darkSteelMat);
+        collar.position.set(lx, 0.71, lz);
+        const foot = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.034, 0.018, 14), darkSteelMat);
+        foot.position.set(lx, 0.009, lz);
+        desk.add(leg, collar, foot);
       }
-      const sideBar = new THREE.Mesh(new THREE.CylinderGeometry(0.013, 0.013, 0.76, 10), steelMat);
-      sideBar.rotation.x = Math.PI / 2;
-      sideBar.position.set(lx, 0.18, 0);
-      desk.add(sideBar);
     }
 
-    // Drawer Cabinet with 3 Recessed Drawers & Metallic Pull Handles
-    const drawerHousing = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.57, 0.72), woodTopMat);
-    drawerHousing.position.set(0.76, 0.295, 0);
+    // Right-Side 3-Drawer Wood Cabinet (sleek recessed pull slots like reference photo)
+    const drawerHousing = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.64, 0.68), drawerWoodMat);
+    drawerHousing.position.set(0.67, 0.33, 0.02);
     drawerHousing.castShadow = true;
     drawerHousing.receiveShadow = true;
     desk.add(drawerHousing);
 
     for (let i = 0; i < 3; i++) {
-      const dy = 0.12 + i * 0.175;
-      const front = new THREE.Mesh(new THREE.BoxGeometry(0.39, 0.145, 0.022), woodTopMat);
-      front.position.set(0.76, dy, 0.366);
+      const dy = 0.13 + i * 0.205;
+      const front = new THREE.Mesh(new THREE.BoxGeometry(0.415, 0.185, 0.02), drawerWoodMat);
+      front.position.set(0.67, dy, 0.365);
       front.receiveShadow = true;
-      const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.14, 10), chromeMat);
-      handle.rotation.z = Math.PI / 2;
-      handle.position.set(0.76, dy, 0.39);
-      for (const hx of [-0.055, 0.055]) {
-        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.02, 8), chromeMat);
-        post.rotation.x = Math.PI / 2;
-        post.position.set(0.76 + hx, dy, 0.38);
-        desk.add(post);
-      }
-      desk.add(front, handle);
+      const pullCutout = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.022, 0.015), recessSlotMat);
+      pullCutout.position.set(0.67, dy + 0.062, 0.372);
+      desk.add(front, pullCutout);
     }
-
-    // Extended Fabric Desk Mat / Mousepad
-    const deskMat = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.007, 0.42), mousepadMat);
-    deskMat.position.set(-0.04, 0.794, 0.12);
-    deskMat.receiveShadow = true;
-    desk.add(deskMat);
 
     this.scene.add(desk);
 
-    // Ergonomic Chair (metallic frame + matte fabric seat/backrest)
+    // Ergonomic Racing-Style Gaming Chair in front of Desk (matches reference silhouette!)
     const chair = new THREE.Group();
-    chair.position.set(0.18, 0, -1.52);
-    chair.rotation.y = 0.3;
+    chair.position.set(-0.04, 0, -1.78);
+    chair.rotation.y = 0.16;
 
-    const fabric = new THREE.MeshStandardMaterial({
-      map: this.blanketFabricTex,
-      color: 0x243044,
+    const leatherMat = new THREE.MeshStandardMaterial({
+      color: 0x1b1d21,
+      roughness: 0.62,
+      metalness: 0.08,
+    });
+    const trimAccentMat = new THREE.MeshStandardMaterial({
+      color: 0x8f5634,
+      roughness: 0.55,
+      metalness: 0.1,
+    });
+    const meshSeatMat = new THREE.MeshStandardMaterial({
+      map: this.linenGrayTex,
+      color: 0x262930,
       roughness: 0.9,
       metalness: 0.0,
     });
-    const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.06, 14), steelMat);
-    hub.position.y = 0.07;
+
+    // 5-Star Base & Casters
+    const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.048, 0.058, 0.06, 14), darkSteelMat);
+    hub.position.y = 0.075;
     chair.add(hub);
 
     for (let i = 0; i < 5; i++) {
       const ang = (i / 5) * Math.PI * 2;
-      const spoke = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.32, 10), steelMat);
+      const spoke = new THREE.Mesh(new THREE.CylinderGeometry(0.017, 0.017, 0.33, 10), darkSteelMat);
       spoke.rotation.z = Math.PI / 2;
       spoke.rotation.y = -ang;
-      spoke.position.set(Math.cos(ang) * 0.16, 0.06, Math.sin(ang) * 0.16);
+      spoke.position.set(Math.cos(ang) * 0.165, 0.065, Math.sin(ang) * 0.165);
 
-      const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, 0.025, 12), fabric);
-      wheel.rotation.z = Math.PI / 2;
-      wheel.rotation.y = -ang;
-      wheel.position.set(Math.cos(ang) * 0.3, 0.028, Math.sin(ang) * 0.3);
-      chair.add(spoke, wheel);
+      const caster = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.026, 0.028, 12), leatherMat);
+      caster.rotation.z = Math.PI / 2;
+      caster.rotation.y = -ang;
+      caster.position.set(Math.cos(ang) * 0.31, 0.026, Math.sin(ang) * 0.31);
+      chair.add(spoke, caster);
     }
 
-    const gasLift = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.032, 0.38, 14), chromeMat);
-    gasLift.position.y = 0.27;
-    const seat = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.075, 0.46), fabric);
-    seat.position.y = 0.48;
-    seat.castShadow = true;
-    seat.receiveShadow = true;
-    const backrest = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.56, 0.065), fabric);
-    backrest.position.set(0, 0.82, 0.21);
-    backrest.rotation.x = 0.08;
-    backrest.castShadow = true;
-    const headrest = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.14, 0.06), fabric);
-    headrest.position.set(0, 1.18, 0.22);
+    const gasLift = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.03, 0.35, 14), brushedMetalMat);
+    gasLift.position.y = 0.26;
+    chair.add(gasLift);
 
-    for (const ax of [-0.27, 0.27]) {
-      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.18, 10), steelMat);
+    // Seat Base + Side Bolsters
+    const seatBase = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.085, 0.48), meshSeatMat);
+    seatBase.position.y = 0.46;
+    seatBase.castShadow = true;
+    seatBase.receiveShadow = true;
+    chair.add(seatBase);
+
+    for (const sx of [-0.25, 0.25]) {
+      const seatBolster = new THREE.Mesh(new THREE.BoxGeometry(0.065, 0.11, 0.46), leatherMat);
+      seatBolster.position.set(sx, 0.48, 0);
+      seatBolster.rotation.z = sx > 0 ? 0.18 : -0.18;
+      seatBolster.castShadow = true;
+      chair.add(seatBolster);
+    }
+
+    // Racing Backrest (sculpted lower back + side wings + upper headrest with twin harness cutouts)
+    const backLower = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.42, 0.07), meshSeatMat);
+    backLower.position.set(0, 0.72, 0.22);
+    backLower.rotation.x = 0.09;
+    backLower.castShadow = true;
+    chair.add(backLower);
+
+    for (const sx of [-0.22, 0.22]) {
+      const wing = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.68, 0.1), leatherMat);
+      wing.position.set(sx, 0.84, 0.21);
+      wing.rotation.x = 0.09;
+      wing.rotation.y = sx > 0 ? -0.22 : 0.22;
+      wing.castShadow = true;
+      chair.add(wing);
+
+      const trimStripe = new THREE.Mesh(new THREE.BoxGeometry(0.014, 0.64, 0.02), trimAccentMat);
+      trimStripe.position.set(sx * 1.12, 0.84, 0.17);
+      trimStripe.rotation.x = 0.09;
+      chair.add(trimStripe);
+    }
+
+    // Center pillar between the twin shoulder harness cutouts + top headrest arch
+    const centerBridge = new THREE.Mesh(new THREE.BoxGeometry(0.085, 0.16, 0.065), leatherMat);
+    centerBridge.position.set(0, 0.99, 0.245);
+    centerBridge.rotation.x = 0.09;
+    const headCrown = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.15, 0.075), leatherMat);
+    headCrown.position.set(0, 1.13, 0.258);
+    headCrown.rotation.x = 0.09;
+    headCrown.castShadow = true;
+    const headTrim = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.018, 0.08), trimAccentMat);
+    headTrim.position.set(0, 1.21, 0.264);
+    chair.add(centerBridge, headCrown, headTrim);
+
+    // Armrests
+    for (const ax of [-0.29, 0.29]) {
+      const post = new THREE.Mesh(new THREE.BoxGeometry(0.028, 0.19, 0.045), darkSteelMat);
       post.position.set(ax, 0.56, 0.02);
-      const pad = new THREE.Mesh(new THREE.BoxGeometry(0.065, 0.025, 0.26), fabric);
-      pad.position.set(ax, 0.65, 0.02);
+      const pad = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.028, 0.27), leatherMat);
+      pad.position.set(ax, 0.66, 0.01);
+      pad.castShadow = true;
       chair.add(post, pad);
     }
 
-    chair.add(gasLift, seat, backrest, headrest);
     this.scene.add(chair);
   }
 
   private buildCompositeComputerStation(): void {
+    // Centered on the wall-flush desk (desk top surface is at Y = 0.768, Z center = -2.74)
     const pc = new THREE.Group();
-    pc.position.set(0, 0.79, -2.5);
+    pc.position.set(0, 0.768, -2.74);
 
-    const chassisMat = new THREE.MeshStandardMaterial({
-      color: 0x1b202b,
-      roughness: 0.35,
-      metalness: 0.55,
+    const chassisBlackMat = new THREE.MeshStandardMaterial({
+      color: 0x16191f,
+      roughness: 0.38,
+      metalness: 0.42,
     });
-    const metalMat = new THREE.MeshStandardMaterial({
-      color: 0xb6c2d1,
+    const brushedAluminumMat = new THREE.MeshStandardMaterial({
+      color: 0xc8cfd8,
+      roughness: 0.25,
+      metalness: 0.8,
+    });
+    const darkMetalMat = new THREE.MeshStandardMaterial({
+      color: 0x3b424d,
       roughness: 0.25,
       metalness: 0.8,
     });
 
-    // Sculpted Metallic Monitor Stand
-    const standFoot = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.2, 0.018, 22), metalMat);
-    standFoot.scale.set(1.2, 1, 0.7);
-    standFoot.position.set(0, 0.009, -0.2);
-    standFoot.castShadow = true;
-    const standNeck = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.034, 0.4, 14), metalMat);
-    standNeck.position.set(0, 0.21, -0.24);
-    standNeck.castShadow = true;
+    // 1. SINGLE WIDE BLACK MONITOR WITH THIN BEZEL & V-SHAPED METALLIC STAND (dead center!)
+    const standGroup = new THREE.Group();
+    standGroup.position.set(0, 0, -0.22);
 
-    // Thin-Bezel Curved Ultrawide Monitor
-    const curveRadius = 2.4;
-    const screenW = 0.96;
-    const screenH = 0.52;
+    // V-shaped splayed brushed-metal legs (matching reference photo!)
+    for (const side of [-1, 1]) {
+      const vLeg = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.012, 0.026), brushedAluminumMat);
+      vLeg.position.set(side * 0.098, 0.008, 0.055);
+      vLeg.rotation.y = side * -0.44;
+      vLeg.castShadow = true;
+      standGroup.add(vLeg);
+    }
+    // Rear stabilizing heel & tapered brushed-metal neck column
+    const rearHeel = new THREE.Mesh(new THREE.BoxGeometry(0.058, 0.014, 0.085), brushedAluminumMat);
+    rearHeel.position.set(0, 0.008, -0.01);
+    const neckCol = new THREE.Mesh(new THREE.BoxGeometry(0.056, 0.34, 0.028), brushedAluminumMat);
+    neckCol.position.set(0, 0.175, -0.032);
+    neckCol.rotation.x = 0.08;
+    neckCol.castShadow = true;
+    const vesaHub = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.09, 0.03), darkMetalMat);
+    vesaHub.position.set(0, 0.34, -0.022);
+    standGroup.add(rearHeel, neckCol, vesaHub);
+    pc.add(standGroup);
 
-    const bezelGeo = createCurvedScreenGeometry(screenW + 0.032, screenH + 0.036, curveRadius, 22);
-    const bezelBack = new THREE.Mesh(
-      bezelGeo,
+    // Single Ultrawide Curved Thin-Bezel Monitor (1 monitor only!)
+    const curveRadius = 2.5;
+    const screenW = 0.94;
+    const screenH = 0.44;
+
+    const bezelBackGeo = createCurvedScreenGeometry(screenW + 0.022, screenH + 0.026, curveRadius, 24);
+    const monitorBack = new THREE.Mesh(
+      bezelBackGeo,
       new THREE.MeshStandardMaterial({
-        color: 0x12161f,
-        roughness: 0.32,
-        metalness: 0.52,
+        color: 0x101216,
+        roughness: 0.35,
+        metalness: 0.45,
         side: THREE.DoubleSide,
       })
     );
-    bezelBack.position.set(0, 0.46, -0.21);
-    bezelBack.castShadow = true;
+    monitorBack.position.set(0, 0.39, -0.22);
+    monitorBack.castShadow = true;
 
-    const screenTex = this.createCanvasTexture(512, 288, (ctx, w, h) => {
+    // Slight dark metallic chin bar along the bottom bezel
+    const chinGeo = createCurvedScreenGeometry(screenW + 0.022, 0.016, curveRadius, 24);
+    const chinBar = new THREE.Mesh(chinGeo, darkMetalMat);
+    chinBar.position.set(0, 0.39 - screenH * 0.5 - 0.006, -0.214);
+    pc.add(chinBar);
+
+    const screenTex = this.createCanvasTexture(512, 256, (ctx, w, h) => {
       const grad = ctx.createLinearGradient(0, 0, w, h);
-      grad.addColorStop(0, '#021c44');
-      grad.addColorStop(1, '#0c63b8');
+      grad.addColorStop(0, '#041a3c');
+      grad.addColorStop(1, '#0b5ca8');
       ctx.fillStyle = grad;
       ctx.fillRect(0, 0, w, h);
       ctx.fillStyle = '#38bdf8';
-      ctx.fillRect(290, 62, 65, 65);
-      ctx.fillRect(365, 62, 65, 65);
-      ctx.fillRect(290, 137, 65, 65);
-      ctx.fillRect(365, 137, 65, 65);
+      ctx.fillRect(298, 56, 58, 58);
+      ctx.fillRect(366, 56, 58, 58);
+      ctx.fillRect(298, 124, 58, 58);
+      ctx.fillRect(366, 124, 58, 58);
       ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 22px sans-serif';
+      ctx.font = 'bold 21px sans-serif';
       ctx.fillText('CYBER-OS READY', 34, 62);
     });
 
@@ -843,643 +1239,938 @@ export class DeveloperRoom3D {
       roughness: 0.16,
     });
     this.monitorOffMat = new THREE.MeshStandardMaterial({
-      color: 0x05070a,
+      color: 0x07090c,
       emissive: 0x000000,
-      roughness: 0.12,
-      metalness: 0.18,
+      roughness: 0.14,
+      metalness: 0.15,
     });
 
-    const screenGeo = createCurvedScreenGeometry(screenW, screenH, curveRadius, 22);
+    const screenGeo = createCurvedScreenGeometry(screenW, screenH, curveRadius, 24);
     this.monitorScreenMesh = new THREE.Mesh(screenGeo, this.monitorOffMat);
-    this.monitorScreenMesh.position.set(0, 0.46, -0.205);
+    this.monitorScreenMesh.position.set(0, 0.39, -0.214);
+    pc.add(monitorBack, this.monitorScreenMesh);
 
-    // Mechanical Keyboard with Crisp Keycap Texture + Raised 3D Keycap Rows
-    const keycapTex = this.createCanvasTexture(256, 96, (ctx, w, h) => {
-      ctx.fillStyle = '#11161f';
+    // 2. RGB MECHANICAL KEYBOARD (centered in front of monitor)
+    const rgbKeyAlbedo = this.createCanvasTexture(512, 160, (ctx, w, h) => {
+      ctx.fillStyle = '#12151a';
       ctx.fillRect(0, 0, w, h);
       const rows = 5;
-      const cols = 15;
-      const kw = (w - 12) / cols;
-      const kh = (h - 12) / rows;
+      const cols = 18;
+      const kw = (w - 18) / cols;
+      const kh = (h - 18) / rows;
       for (let r = 0; r < rows; r++) {
         for (let c = 0; c < cols; c++) {
           if (r === 4 && c >= 4 && c <= 9) continue;
-          ctx.fillStyle = c === 0 || c === cols - 1 ? '#293548' : '#3b4a62';
-          ctx.fillRect(6 + c * kw + 1, 6 + r * kh + 1, kw - 2.5, kh - 2.5);
+          const hue = (c / cols) * 320 + r * 14;
+          ctx.fillStyle = `hsl(${hue}, 88%, 55%)`;
+          ctx.fillRect(9 + c * kw + 0.5, 9 + r * kh + 0.5, kw - 2, kh - 2);
+          ctx.fillStyle = '#1a1f28';
+          ctx.fillRect(9 + c * kw + 2.5, 9 + r * kh + 2.5, kw - 6, kh - 6);
         }
       }
-      // Spacebar
-      ctx.fillStyle = '#334155';
-      ctx.fillRect(6 + 4 * kw + 1, 6 + 4 * kh + 1, 6 * kw - 2.5, kh - 2.5);
+      // Spacebar with glowing RGB under-edge
+      ctx.fillStyle = '#00e5ff';
+      ctx.fillRect(9 + 4 * kw + 1, 9 + 4 * kh + 1, 6 * kw - 3, kh - 3);
+      ctx.fillStyle = '#191e26';
+      ctx.fillRect(9 + 4 * kw + 3, 9 + 4 * kh + 3, 6 * kw - 7, kh - 7);
     });
 
-    const kbBase = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.02, 0.155), chassisMat);
-    kbBase.position.set(-0.06, 0.016, 0.14);
+    const kbBase = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.018, 0.148), chassisBlackMat);
+    kbBase.position.set(-0.04, 0.01, 0.19);
     kbBase.castShadow = true;
-    const kbKeyDeck = new THREE.Mesh(
-      new THREE.BoxGeometry(0.425, 0.012, 0.135),
-      new THREE.MeshStandardMaterial({ map: keycapTex, roughness: 0.55, metalness: 0.1 })
+    const kbDeck = new THREE.Mesh(
+      new THREE.BoxGeometry(0.432, 0.01, 0.132),
+      new THREE.MeshStandardMaterial({
+        map: rgbKeyAlbedo,
+        emissive: 0xffffff,
+        emissiveMap: rgbKeyAlbedo,
+        emissiveIntensity: 0.72,
+        roughness: 0.48,
+        metalness: 0.1,
+      })
     );
-    kbKeyDeck.position.set(-0.06, 0.03, 0.14);
-    pc.add(kbKeyDeck);
+    kbDeck.position.set(-0.04, 0.022, 0.19);
+    pc.add(kbBase, kbDeck);
 
-    // Ergonomic Mouse with Scroll Wheel Accent
-    const mouse = new THREE.Mesh(new THREE.SphereGeometry(0.042, 16, 12), chassisMat);
-    mouse.scale.set(0.75, 0.55, 1.3);
-    mouse.position.set(0.3, 0.022, 0.14);
+    // 3. BLACK MOUSEPAD & ERGONOMIC GAMING MOUSE (right of keyboard)
+    const mousepadTex = this.createCanvasTexture(256, 256, (ctx, w, h) => {
+      ctx.fillStyle = '#17191e';
+      ctx.fillRect(0, 0, w, h);
+      ctx.strokeStyle = '#2b303a';
+      ctx.lineWidth = 6;
+      ctx.strokeRect(5, 5, w - 10, h - 10);
+      // Tiny crisp corner logo emblem
+      ctx.strokeStyle = '#cbd5e1';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(w - 28, h - 26, 9, 0.4, Math.PI * 1.8);
+      ctx.stroke();
+    });
+    const mousepad = new THREE.Mesh(
+      new THREE.BoxGeometry(0.32, 0.005, 0.24),
+      new THREE.MeshStandardMaterial({
+        map: mousepadTex,
+        roughness: 0.9,
+        metalness: 0.0,
+      })
+    );
+    mousepad.position.set(0.39, 0.003, 0.19);
+    mousepad.receiveShadow = true;
+    pc.add(mousepad);
+
+    const mouse = new THREE.Mesh(new THREE.SphereGeometry(0.038, 16, 12), chassisBlackMat);
+    mouse.scale.set(0.78, 0.56, 1.38);
+    mouse.position.set(0.39, 0.024, 0.18);
     mouse.castShadow = true;
-    const scrollWheel = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.006, 10), metalMat);
+    const scrollWheel = new THREE.Mesh(new THREE.CylinderGeometry(0.007, 0.007, 0.006, 10), brushedAluminumMat);
     scrollWheel.rotation.z = Math.PI / 2;
-    scrollWheel.position.set(0.3, 0.042, 0.115);
-    pc.add(scrollWheel);
+    scrollWheel.position.set(0.39, 0.041, 0.155);
+    pc.add(mouse, scrollWheel);
 
-    // PC Tower with Tempered Glass Side Panel & Subtle Internal LED Glow
-    const towerGroup = new THREE.Group();
-    towerGroup.position.set(0.84, 0.24, -0.06);
+    // 4. SHOWCASE TEMPERED-GLASS CUSTOM PC TOWER (right side of desk, Lian Li O11 style!)
+    const tower = new THREE.Group();
+    tower.position.set(0.84, 0.23, -0.06);
+    tower.rotation.y = -0.14;
 
-    // Hollow-feel chassis outer shell (back, top, bottom, front, right side) so interior is visible through glass
-    const rightPanel = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.48, 0.44), chassisMat);
-    rightPanel.position.x = 0.11;
-    rightPanel.castShadow = true;
-    const topPanel = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.022, 0.44), chassisMat);
-    topPanel.position.y = 0.23;
+    const towerW = 0.25;
+    const towerH = 0.44;
+    const towerD = 0.45;
+
+    // Brushed aluminum outer structural panels (right solid side, top, bottom, rear, corner pillar)
+    const rightSide = new THREE.Mesh(new THREE.BoxGeometry(0.018, towerH, towerD), brushedAluminumMat);
+    rightSide.position.x = towerW * 0.5 - 0.009;
+    rightSide.castShadow = true;
+    const topPanel = new THREE.Mesh(new THREE.BoxGeometry(towerW, 0.02, towerD), brushedAluminumMat);
+    topPanel.position.y = towerH * 0.5 - 0.01;
     topPanel.castShadow = true;
-    const botPanel = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.022, 0.44), chassisMat);
-    botPanel.position.y = -0.23;
-    const frontPanel = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.48, 0.025), chassisMat);
-    frontPanel.position.z = 0.21;
-    const backPanel = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.48, 0.022), chassisMat);
-    backPanel.position.z = -0.21;
+    const botPanel = new THREE.Mesh(new THREE.BoxGeometry(towerW, 0.022, towerD), brushedAluminumMat);
+    botPanel.position.y = -towerH * 0.5 + 0.011;
+    const backPanel = new THREE.Mesh(new THREE.BoxGeometry(towerW, towerH, 0.018), chassisBlackMat);
+    backPanel.position.z = -towerD * 0.5 + 0.009;
+    const frontRightPillar = new THREE.Mesh(new THREE.BoxGeometry(0.055, towerH, 0.026), brushedAluminumMat);
+    frontRightPillar.position.set(towerW * 0.5 - 0.028, 0, towerD * 0.5 - 0.013);
+    frontRightPillar.castShadow = true;
 
-    // Internal motherboard + GPU card + subtle glowing LED rings & strip
+    // Vertical white/cool-blue LED accent strip on front-right pillar
+    this.pcStripLedMat = new THREE.MeshStandardMaterial({
+      color: 0xeef6ff,
+      emissive: 0xcbe4ff,
+      emissiveIntensity: 1.25,
+      roughness: 0.2,
+    });
+    const frontLedStrip = new THREE.Mesh(new THREE.BoxGeometry(0.008, towerH - 0.05, 0.008), this.pcStripLedMat);
+    frontLedStrip.position.set(towerW * 0.5 - 0.056, 0, towerD * 0.5 - 0.004);
+
+    // Interior hardware: ATX motherboard, VRM heatsinks, horizontal GPU, glowing LED fans, AIO cooler tubes
     const mobo = new THREE.Mesh(
-      new THREE.BoxGeometry(0.015, 0.38, 0.34),
-      new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.5, metalness: 0.4 })
+      new THREE.BoxGeometry(0.014, 0.34, 0.32),
+      new THREE.MeshStandardMaterial({ color: 0x111622, roughness: 0.45, metalness: 0.45 })
     );
-    mobo.position.set(0.085, 0, -0.01);
+    mobo.position.set(0.088, 0.01, -0.02);
+
+    const vrmHeatsink = new THREE.Mesh(new THREE.BoxGeometry(0.024, 0.14, 0.042), brushedAluminumMat);
+    vrmHeatsink.position.set(0.072, 0.09, -0.11);
 
     const gpuCard = new THREE.Mesh(
-      new THREE.BoxGeometry(0.14, 0.036, 0.25),
-      new THREE.MeshStandardMaterial({ color: 0x263143, roughness: 0.3, metalness: 0.75 })
+      new THREE.BoxGeometry(0.135, 0.042, 0.27),
+      new THREE.MeshStandardMaterial({ color: 0x1d232d, roughness: 0.3, metalness: 0.72 })
     );
-    gpuCard.position.set(0.01, -0.03, -0.02);
+    gpuCard.position.set(0.015, -0.045, -0.01);
+
+    const aioPump = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.032, 0.032, 0.032, 16),
+      darkMetalMat
+    );
+    aioPump.rotation.z = Math.PI / 2;
+    aioPump.position.set(0.068, 0.06, -0.04);
 
     this.pcInteriorLedMat = new THREE.MeshStandardMaterial({
-      color: 0x00ff41,
-      emissive: 0x00ff41,
-      emissiveIntensity: 0.85,
+      color: 0xf4f9ff,
+      emissive: 0xd8ecff,
+      emissiveIntensity: 1.3,
       roughness: 0.2,
     });
 
-    const gpuLedStrip = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.008, 0.22), this.pcInteriorLedMat);
-    gpuLedStrip.position.set(-0.062, -0.03, -0.02);
+    const pumpRing = new THREE.Mesh(new THREE.TorusGeometry(0.024, 0.004, 8, 18), this.pcInteriorLedMat);
+    pumpRing.rotation.y = Math.PI / 2;
+    pumpRing.position.set(0.051, 0.06, -0.04);
 
-    for (const fy of [-0.09, 0.09]) {
-      const fanRing = new THREE.Mesh(new THREE.TorusGeometry(0.056, 0.008, 10, 20), this.pcInteriorLedMat);
-      fanRing.rotation.y = Math.PI / 2;
-      fanRing.position.set(-0.04, fy, 0.08);
-      towerGroup.add(fanRing);
+    // 2 Glowing White Ring Case Fans (rear & upper intake)
+    for (const [fx, fy, fz, ry] of [
+      [0.01, 0.07, -0.20, 0],
+      [0.078, 0.07, 0.08, Math.PI / 2],
+      [0.078, -0.07, 0.08, Math.PI / 2],
+    ] as Array<[number, number, number, number]>) {
+      const fanRing = new THREE.Mesh(new THREE.TorusGeometry(0.052, 0.007, 8, 20), this.pcInteriorLedMat);
+      fanRing.rotation.y = ry;
+      fanRing.position.set(fx, fy, fz);
+      tower.add(fanRing);
     }
 
-    // Translucent Tempered Glass Side Panel
-    const glassSide = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.4, 0.43),
-      new THREE.MeshStandardMaterial({
-        color: 0x1e293b,
-        roughness: 0.08,
-        metalness: 0.15,
-        transparent: true,
-        opacity: 0.32,
-      })
+    // Curved AIO Liquid Cooler Tubes inside the PC
+    const tubeCurve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(0.055, 0.06, -0.02),
+      new THREE.Vector3(-0.02, 0.12, 0.04),
+      new THREE.Vector3(0.01, 0.19, 0.09),
+    ]);
+    const aioTube = new THREE.Mesh(
+      new THREE.TubeGeometry(tubeCurve, 14, 0.0075, 8, false),
+      new THREE.MeshStandardMaterial({ color: 0x12151a, roughness: 0.65 })
     );
+
+    // Translucent Tempered Glass Side & Front Panels (depthWrite: false for clean interior visibility)
+    const glassMat = new THREE.MeshStandardMaterial({
+      color: 0x24303f,
+      roughness: 0.08,
+      metalness: 0.2,
+      transparent: true,
+      opacity: 0.22,
+      depthWrite: false,
+    });
+    const glassSide = new THREE.Mesh(new THREE.PlaneGeometry(towerD - 0.03, towerH - 0.04), glassMat);
     glassSide.rotation.y = -Math.PI / 2;
-    glassSide.position.x = -0.121;
+    glassSide.position.x = -towerW * 0.5 + 0.002;
+    glassSide.renderOrder = 2;
 
-    towerGroup.add(rightPanel, topPanel, botPanel, frontPanel, backPanel, mobo, gpuCard, gpuLedStrip, glassSide);
+    const glassFront = new THREE.Mesh(new THREE.PlaneGeometry(towerW - 0.06, towerH - 0.04), glassMat);
+    glassFront.position.set(-0.028, 0, towerD * 0.5 - 0.002);
+    glassFront.renderOrder = 2;
 
+    // Power Button LED on the front-right brushed aluminum pillar
     this.pcPowerLedMat = new THREE.MeshStandardMaterial({
-      color: 0x334155,
+      color: 0x475569,
       emissive: 0x000000,
       emissiveIntensity: 0,
     });
-    const powerLed = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.016, 14), this.pcPowerLedMat);
-    powerLed.rotation.x = Math.PI / 2;
-    powerLed.position.set(0.84, 0.42, 0.166);
+    const powerBtn = new THREE.Mesh(new THREE.CylinderGeometry(0.011, 0.011, 0.01, 14), this.pcPowerLedMat);
+    powerBtn.rotation.x = Math.PI / 2;
+    powerBtn.position.set(towerW * 0.5 - 0.028, 0.145, towerD * 0.5 + 0.001);
 
+    tower.add(
+      rightSide,
+      topPanel,
+      botPanel,
+      backPanel,
+      frontRightPillar,
+      frontLedStrip,
+      mobo,
+      vrmHeatsink,
+      gpuCard,
+      aioPump,
+      pumpRing,
+      aioTube,
+      glassSide,
+      glassFront,
+      powerBtn
+    );
+    pc.add(tower);
+
+    // Interactive HitBox for 'computer' (covers monitor + PC tower cleanly)
     const hitBox = new THREE.Mesh(
-      new THREE.BoxGeometry(1.42, 0.72, 0.65),
+      new THREE.BoxGeometry(1.55, 0.72, 0.72),
       new THREE.MeshBasicMaterial({ visible: false })
     );
-    hitBox.position.set(0.24, 0.36, -0.04);
+    hitBox.position.set(0.22, 0.34, -0.08);
     hitBox.userData.interactId = 'computer' as RoomInteractTarget;
     this.interactables.push(hitBox);
-    this.targetAnchors.set('computer', new THREE.Vector3(0.05, 1.18, -2.38));
+    this.targetAnchors.set('computer', new THREE.Vector3(0.05, 1.16, -2.55));
+    pc.add(hitBox);
 
-    pc.add(standFoot, standNeck, bezelBack, this.monitorScreenMesh, kbBase, mouse, towerGroup, powerLed, hitBox);
     this.scene.add(pc);
   }
 
   private buildCompositeNotebook(): void {
+    // Open Ruled Python Notebook on the left side of the desk (interactive target: 'notebook')
     const nb = new THREE.Group();
-    nb.position.set(-0.68, 0.79, -2.32);
-    nb.rotation.y = 0.24;
+    nb.position.set(-0.46, 0.768, -2.54);
+    nb.rotation.y = 0.14;
 
-    const coverMat = new THREE.MeshStandardMaterial({ color: 0x1e40af, roughness: 0.78 });
+    const coverMat = new THREE.MeshStandardMaterial({ color: 0x3f434a, roughness: 0.85 });
     const pageTex = this.createCanvasTexture(256, 192, (ctx, w, h) => {
-      ctx.fillStyle = '#fffef7';
+      ctx.fillStyle = '#faf7ef';
       ctx.fillRect(0, 0, w, h);
       ctx.strokeStyle = '#cbd5e1';
-      for (let y = 24; y < h; y += 16) {
+      ctx.lineWidth = 1;
+      for (let y = 22; y < h; y += 14) {
         ctx.beginPath();
-        ctx.moveTo(0, y);
-        ctx.lineTo(w, y);
+        ctx.moveTo(8, y);
+        ctx.lineTo(w - 8, y);
         ctx.stroke();
       }
-      ctx.fillStyle = '#0f172a';
-      ctx.font = 'bold 15px monospace';
-      ctx.fillText('PYTHON NOTES', 18, 34);
+      ctx.fillStyle = '#1e293b';
+      ctx.font = 'bold 14px monospace';
+      ctx.fillText('PYTHON NOTES', 18, 32);
       ctx.font = '12px monospace';
-      ctx.fillText('def solve(x):', 18, 66);
-      ctx.fillText('  return x * 2', 18, 86);
+      ctx.fillText('def defend(x):', 18, 60);
+      ctx.fillText('  return x * 2', 18, 78);
+      ctx.fillText('# firewall v30', 18, 108);
     });
     const pageMat = new THREE.MeshStandardMaterial({ map: pageTex, roughness: 0.9 });
-    const wireMat = new THREE.MeshStandardMaterial({ color: 0xcbd5e1, roughness: 0.25, metalness: 0.8 });
+    const wireMat = new THREE.MeshStandardMaterial({ color: 0xb8c0ca, roughness: 0.25, metalness: 0.8 });
 
-    const cover = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.012, 0.26), coverMat);
+    const cover = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.01, 0.23), coverMat);
     cover.castShadow = true;
-    const leftPage = new THREE.Mesh(new THREE.BoxGeometry(0.155, 0.016, 0.24), pageMat);
-    leftPage.position.set(-0.085, 0.012, 0);
-    const rightPage = new THREE.Mesh(new THREE.BoxGeometry(0.155, 0.016, 0.24), pageMat);
-    rightPage.position.set(0.085, 0.012, 0);
+    const leftPage = new THREE.Mesh(new THREE.BoxGeometry(0.145, 0.014, 0.215), pageMat);
+    leftPage.position.set(-0.076, 0.01, 0);
+    const rightPage = new THREE.Mesh(new THREE.BoxGeometry(0.145, 0.014, 0.215), pageMat);
+    rightPage.position.set(0.076, 0.01, 0);
 
-    for (let z = -0.1; z <= 0.1; z += 0.04) {
-      const coil = new THREE.Mesh(new THREE.TorusGeometry(0.012, 0.0025, 8, 12), wireMat);
-      coil.position.set(0, 0.02, z);
+    for (let z = -0.09; z <= 0.09; z += 0.036) {
+      const coil = new THREE.Mesh(new THREE.TorusGeometry(0.011, 0.0022, 8, 12), wireMat);
+      coil.position.set(0, 0.018, z);
       nb.add(coil);
     }
 
-    // Metallic clip ballpoint pen
+    // Pen beside the notebook
     const penBody = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.006, 0.006, 0.16, 10),
-      new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.3, metalness: 0.4 })
+      new THREE.CylinderGeometry(0.0055, 0.0055, 0.15, 10),
+      new THREE.MeshStandardMaterial({ color: 0x1e2430, roughness: 0.3, metalness: 0.5 })
     );
     penBody.rotation.z = Math.PI / 2;
-    penBody.rotation.y = 0.45;
-    penBody.position.set(0.22, 0.008, 0.04);
+    penBody.rotation.y = 0.52;
+    penBody.position.set(0.19, 0.007, 0.03);
 
     const hitBox = new THREE.Mesh(
-      new THREE.BoxGeometry(0.5, 0.22, 0.4),
+      new THREE.BoxGeometry(0.46, 0.22, 0.36),
       new THREE.MeshBasicMaterial({ visible: false })
     );
     hitBox.position.y = 0.08;
     hitBox.userData.interactId = 'notebook' as RoomInteractTarget;
     this.interactables.push(hitBox);
-    this.targetAnchors.set('notebook', new THREE.Vector3(-0.68, 0.85, -2.32));
+    this.targetAnchors.set('notebook', new THREE.Vector3(-0.46, 0.84, -2.54));
 
     nb.add(cover, leftPage, rightPage, penBody, hitBox);
     this.scene.add(nb);
   }
 
-  private buildDeskLampAndMug(): void {
-    // Articulated Metallic Desk Lamp (metalness: 0.8, roughness: 0.25)
+  private buildDeskPropsAndCables(): void {
+    const deskTopY = 0.768;
+
+    // 1. Ceramic Matte Stoneware Coffee Mug (left-center of desk, matching reference!)
+    const mug = new THREE.Group();
+    mug.position.set(-0.37, deskTopY, -2.74);
+    const ceramicMat = new THREE.MeshStandardMaterial({ color: 0xcdc6bc, roughness: 0.38, metalness: 0.05 });
+    const cup = new THREE.Mesh(new THREE.CylinderGeometry(0.039, 0.036, 0.092, 16), ceramicMat);
+    cup.position.y = 0.046;
+    cup.castShadow = true;
+    const coffee = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.034, 0.034, 0.004, 14),
+      new THREE.MeshStandardMaterial({ color: 0x26140c, roughness: 0.14 })
+    );
+    coffee.position.y = 0.088;
+    const handle = new THREE.Mesh(new THREE.TorusGeometry(0.022, 0.006, 8, 14, Math.PI), ceramicMat);
+    handle.rotation.z = -Math.PI / 2;
+    handle.position.set(0.037, 0.048, 0);
+    mug.add(cup, coffee, handle);
+    this.scene.add(mug);
+
+    // 2. Stacked Books on the far left of the desk (matching reference photo!)
+    const bookStack = new THREE.Group();
+    bookStack.position.set(-0.82, deskTopY, -2.56);
+    const stackSpecs: Array<[number, number, number, number, number, number]> = [
+      [0.24, 0.032, 0.175, 0.016, 0.06, 0x3b3835],
+      [0.22, 0.028, 0.165, 0.046, -0.04, 0x5c4738],
+      [0.16, 0.018, 0.115, 0.069, 0.14, 0x9b8e7e],
+    ];
+    for (const [bw, bh, bd, by, rotY, col] of stackSpecs) {
+      const b = new THREE.Mesh(
+        new THREE.BoxGeometry(bw, bh, bd),
+        new THREE.MeshStandardMaterial({ color: col, roughness: 0.82 })
+      );
+      b.position.y = by;
+      b.rotation.y = rotY;
+      b.castShadow = true;
+      b.receiveShadow = true;
+      bookStack.add(b);
+    }
+    this.scene.add(bookStack);
+
+    // 3. Over-Ear Studio Headphones resting on the right side of the desk
+    const hp = new THREE.Group();
+    hp.position.set(0.62, deskTopY + 0.015, -2.47);
+    hp.rotation.y = -0.35;
+    const hpBodyMat = new THREE.MeshStandardMaterial({ color: 0x1a1c20, roughness: 0.42, metalness: 0.25 });
+    const hpPadMat = new THREE.MeshStandardMaterial({ color: 0x111215, roughness: 0.85 });
+    const hpMetalMat = new THREE.MeshStandardMaterial({ color: 0x8e98a4, roughness: 0.25, metalness: 0.8 });
+
+    for (const side of [-1, 1]) {
+      const cupOuter = new THREE.Mesh(new THREE.CylinderGeometry(0.044, 0.044, 0.024, 16), hpBodyMat);
+      cupOuter.position.set(side * 0.068, 0.016, 0);
+      cupOuter.rotation.x = Math.PI * 0.44;
+      cupOuter.castShadow = true;
+      const earPad = new THREE.Mesh(new THREE.TorusGeometry(0.036, 0.013, 10, 18), hpPadMat);
+      earPad.position.set(side * 0.068, 0.014, 0.012);
+      earPad.rotation.x = Math.PI * 0.06;
+      hp.add(cupOuter, earPad);
+    }
+    const bandCurve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(-0.072, 0.024, -0.005),
+      new THREE.Vector3(-0.065, 0.03, -0.095),
+      new THREE.Vector3(0, 0.032, -0.128),
+      new THREE.Vector3(0.065, 0.03, -0.095),
+      new THREE.Vector3(0.072, 0.024, -0.005),
+    ]);
+    const band = new THREE.Mesh(new THREE.TubeGeometry(bandCurve, 18, 0.01, 8, false), hpMetalMat);
+    band.castShadow = true;
+    hp.add(band);
+    this.scene.add(hp);
+
+    // 4. Articulated Silver Architect Lamp (mounted on nightstand/left-back corner, matching reference!)
     const lamp = new THREE.Group();
-    lamp.position.set(-0.98, 0.79, -2.62);
-    const metal = new THREE.MeshStandardMaterial({
-      color: 0x3b4656,
+    lamp.position.set(-1.35, 0.52, -2.92);
+    lamp.rotation.y = 0.45;
+    const lampMetal = new THREE.MeshStandardMaterial({
+      color: 0xb7bfc8,
       roughness: 0.25,
       metalness: 0.8,
     });
-    const brassAccent = new THREE.MeshStandardMaterial({
-      color: 0xd9a05b,
-      roughness: 0.25,
-      metalness: 0.82,
-    });
-    const base = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.11, 0.026, 18), metal);
-    base.position.y = 0.013;
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.098, 0.022, 18), lampMetal);
+    base.position.y = 0.011;
     base.castShadow = true;
-    const arm1 = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.38, 10), metal);
-    arm1.position.set(0, 0.2, 0.04);
-    arm1.rotation.x = 0.22;
-    const joint = new THREE.Mesh(new THREE.SphereGeometry(0.02, 10, 10), brassAccent);
-    joint.position.set(0.01, 0.38, 0.08);
-    const arm2 = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, 0.28, 10), metal);
-    arm2.position.set(0.04, 0.44, 0.18);
-    arm2.rotation.x = 1.05;
+    const arm1 = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, 0.44, 10), lampMetal);
+    arm1.position.set(0, 0.22, 0.04);
+    arm1.rotation.x = 0.2;
+    const joint = new THREE.Mesh(new THREE.SphereGeometry(0.018, 10, 10), lampMetal);
+    joint.position.set(0, 0.43, 0.085);
+    const arm2 = new THREE.Mesh(new THREE.CylinderGeometry(0.009, 0.009, 0.36, 10), lampMetal);
+    arm2.position.set(0, 0.59, 0.04);
+    arm2.rotation.x = -0.32;
     const shade = new THREE.Mesh(
-      new THREE.ConeGeometry(0.098, 0.135, 18, 1, true),
+      new THREE.ConeGeometry(0.088, 0.13, 18, 1, true),
       new THREE.MeshStandardMaterial({
-        color: 0x2f3b4c,
-        roughness: 0.25,
-        metalness: 0.8,
+        color: 0x9aa2ac,
+        roughness: 0.28,
+        metalness: 0.78,
         side: THREE.DoubleSide,
       })
     );
-    shade.position.set(0.06, 0.46, 0.3);
-    shade.rotation.x = Math.PI * 0.82;
+    shade.position.set(0, 0.74, 0.08);
+    shade.rotation.x = Math.PI * 0.74;
     const bulb = new THREE.Mesh(
-      new THREE.SphereGeometry(0.032, 12, 12),
-      new THREE.MeshStandardMaterial({ color: 0xfff8dc, emissive: 0xffcf88, emissiveIntensity: 1.8 })
+      new THREE.SphereGeometry(0.026, 12, 12),
+      new THREE.MeshStandardMaterial({ color: 0xfff8e0, emissive: 0xffce84, emissiveIntensity: 1.9 })
     );
-    bulb.position.set(0.06, 0.42, 0.3);
+    bulb.position.set(0, 0.71, 0.09);
     lamp.add(base, arm1, joint, arm2, shade, bulb);
     this.scene.add(lamp);
 
-    // Ceramic Coffee Mug + Coaster on the desk
-    const mugGroup = new THREE.Group();
-    mugGroup.position.set(0.49, 0.79, -2.26);
-    const coaster = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.056, 0.058, 0.006, 16),
-      new THREE.MeshStandardMaterial({ map: this.warmOakTex, roughness: 0.7 })
+    // 5. Rear Desk Cables & Floor Power Strip (TubeGeometry for realistic cable clutter!)
+    const cableMat = new THREE.MeshStandardMaterial({ color: 0x16181c, roughness: 0.75 });
+    const cablePaths: THREE.Vector3[][] = [
+      // Monitor rear to PC tower rear
+      [
+        new THREE.Vector3(0.04, 1.06, -2.99),
+        new THREE.Vector3(0.18, 0.78, -2.99),
+        new THREE.Vector3(0.52, 0.775, -3.02),
+        new THREE.Vector3(0.84, 0.85, -3.02),
+      ],
+      // Keyboard wire across desk back to PC
+      [
+        new THREE.Vector3(-0.04, 0.775, -2.63),
+        new THREE.Vector3(0.08, 0.775, -2.86),
+        new THREE.Vector3(0.45, 0.775, -2.95),
+        new THREE.Vector3(0.82, 0.82, -2.98),
+      ],
+      // Mouse wire toward back of desk
+      [
+        new THREE.Vector3(0.39, 0.775, -2.64),
+        new THREE.Vector3(0.46, 0.775, -2.88),
+        new THREE.Vector3(0.76, 0.775, -2.96),
+      ],
+      // Cables hanging below desk into floor surge protector
+      [
+        new THREE.Vector3(0.15, 0.74, -3.14),
+        new THREE.Vector3(0.22, 0.36, -3.10),
+        new THREE.Vector3(0.34, 0.04, -2.96),
+      ],
+      [
+        new THREE.Vector3(0.76, 0.74, -3.12),
+        new THREE.Vector3(0.56, 0.32, -3.08),
+        new THREE.Vector3(0.42, 0.04, -2.96),
+      ],
+    ];
+
+    for (const pts of cablePaths) {
+      const curve = new THREE.CatmullRomCurve3(pts);
+      const wire = new THREE.Mesh(new THREE.TubeGeometry(curve, 14, 0.0045, 6, false), cableMat);
+      this.scene.add(wire);
+    }
+
+    // White Floor Multi-Outlet Power Strip beneath desk
+    const strip = new THREE.Mesh(
+      new THREE.BoxGeometry(0.28, 0.032, 0.062),
+      new THREE.MeshStandardMaterial({ color: 0xe9e6df, roughness: 0.55 })
     );
-    coaster.position.y = 0.003;
-    const ceramicMat = new THREE.MeshStandardMaterial({ color: 0xf4f1ea, roughness: 0.22, metalness: 0.05 });
-    const cup = new THREE.Mesh(new THREE.CylinderGeometry(0.042, 0.038, 0.095, 16), ceramicMat);
-    cup.position.y = 0.054;
-    cup.castShadow = true;
-    const coffee = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.036, 0.036, 0.004, 14),
-      new THREE.MeshStandardMaterial({ color: 0x2c1810, roughness: 0.15 })
-    );
-    coffee.position.y = 0.098;
-    const handle = new THREE.Mesh(new THREE.TorusGeometry(0.024, 0.0065, 8, 14, Math.PI), ceramicMat);
-    handle.rotation.z = -Math.PI / 2;
-    handle.position.set(0.04, 0.054, 0);
-    mugGroup.add(coaster, cup, coffee, handle);
-    this.scene.add(mugGroup);
+    strip.position.set(0.38, 0.016, -2.96);
+    strip.rotation.y = 0.08;
+    this.scene.add(strip);
   }
 
-  private buildCompositeWardrobeAndBookshelf(): void {
-    const wood = new THREE.MeshStandardMaterial({
-      map: this.warmOakTex,
+  private buildBookshelvesAndWastebasket(): void {
+    const oakMat = new THREE.MeshStandardMaterial({
+      map: this.bookshelfOakTex,
       roughness: 0.45,
       metalness: 0.04,
     });
-    const darkWood = new THREE.MeshStandardMaterial({
+    const walnutMat = new THREE.MeshStandardMaterial({
       map: this.darkWalnutTex,
       roughness: 0.45,
       metalness: 0.04,
     });
-    const handleMat = new THREE.MeshStandardMaterial({
-      color: 0xd1dbe6,
-      roughness: 0.25,
-      metalness: 0.8,
-    });
-
-    // Wardrobe (Plinth + Wood Body + Crown Molding + Double Doors + Metallic Handles)
-    const wardrobe = new THREE.Group();
-    wardrobe.position.set(2.55, 0, 1.55);
-    wardrobe.rotation.y = -Math.PI / 2;
-
-    const plinth = new THREE.Mesh(new THREE.BoxGeometry(1.52, 0.1, 0.72), darkWood);
-    plinth.position.y = 0.05;
-    const wBody = new THREE.Mesh(new THREE.BoxGeometry(1.5, 2.08, 0.7), wood);
-    wBody.position.y = 1.14;
-    wBody.castShadow = true;
-    wBody.receiveShadow = true;
-    const crown = new THREE.Mesh(new THREE.BoxGeometry(1.58, 0.08, 0.76), darkWood);
-    crown.position.y = 2.22;
-
-    for (const dx of [-0.36, 0.36]) {
-      const doorLeaf = new THREE.Mesh(new THREE.BoxGeometry(0.7, 1.96, 0.03), wood);
-      doorLeaf.position.set(dx, 1.14, 0.36);
-      const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.24, 10), handleMat);
-      handle.position.set(dx > 0 ? dx - 0.26 : dx + 0.26, 1.14, 0.39);
-      wardrobe.add(doorLeaf, handle);
-    }
-    wardrobe.add(plinth, wBody, crown);
-    this.scene.add(wardrobe);
-
-    // Bookshelf + Rich Multi-Shelf Book Collection + Potted Plant
-    const shelf = new THREE.Group();
-    shelf.position.set(-2.95, 0, -1.95);
-    shelf.rotation.y = Math.PI / 2;
-
-    for (const sx of [-0.58, 0.58]) {
-      const side = new THREE.Mesh(new THREE.BoxGeometry(0.04, 1.9, 0.38), darkWood);
-      side.position.set(sx, 0.95, 0);
-      side.castShadow = true;
-      shelf.add(side);
-    }
-    const sBack = new THREE.Mesh(new THREE.BoxGeometry(1.16, 1.9, 0.03), darkWood);
-    sBack.position.set(0, 0.95, -0.175);
-    shelf.add(sBack);
-
-    const shelfLevels = [0.12, 0.55, 0.98, 1.41, 1.84];
-    for (const y of shelfLevels) {
-      const plank = new THREE.Mesh(new THREE.BoxGeometry(1.16, 0.035, 0.36), darkWood);
-      plank.position.set(0, y, 0);
-      plank.receiveShadow = true;
-      shelf.add(plank);
-    }
 
     const bookColors = [
-      0xdc2626, 0x2563eb, 0x059669, 0xd97706, 0x4f46e5, 0x0f766e, 0x9333ea, 0x475569,
+      0x2f3b4c, 0x7c3a2d, 0x3f5e46, 0xc7bba8, 0x4b423b, 0x26466d, 0x9c7b52, 0x22262b,
     ];
     const bookMats = bookColors.map(
-      (c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.78, metalness: 0.02 })
+      (c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.84, metalness: 0.02 })
     );
 
-    // Populate 3 shelves with varied heights/thicknesses & subtle tilted books
-    const shelfConfigs = [
-      { baseY: 0.568, count: 7, startX: -0.46 },
-      { baseY: 0.998, count: 6, startX: -0.42 },
-      { baseY: 1.428, count: 5, startX: -0.46 },
-    ];
-    let colorIdx = 0;
-    for (const cfg of shelfConfigs) {
-      let curX = cfg.startX;
-      for (let i = 0; i < cfg.count; i++) {
-        const bw = 0.045 + (colorIdx % 3) * 0.012;
-        const bh = 0.24 + (colorIdx % 4) * 0.028;
-        const book = new THREE.Mesh(new THREE.BoxGeometry(bw, bh, 0.23), bookMats[colorIdx % bookMats.length]);
-        book.position.set(curX + bw * 0.5, cfg.baseY + bh * 0.5, 0.02);
-        if (i === cfg.count - 1 && cfg.count < 7) {
-          book.rotation.z = -0.22;
-          book.position.x += 0.045;
+    const populateShelfBooks = (
+      parent: THREE.Group,
+      baseY: number,
+      startX: number,
+      count: number,
+      seedOffset: number,
+      depthZ = 0.22
+    ) => {
+      let curX = startX;
+      for (let i = 0; i < count; i++) {
+        const idx = i + seedOffset;
+        const bw = 0.038 + (idx % 3) * 0.011;
+        const bh = 0.22 + (idx % 4) * 0.028;
+        const book = new THREE.Mesh(new THREE.BoxGeometry(bw, bh, depthZ), bookMats[idx % bookMats.length]);
+        book.position.set(curX + bw * 0.5, baseY + bh * 0.5, 0.02);
+        if (i === count - 1 && count <= 6) {
+          book.rotation.z = -0.2;
+          book.position.x += 0.038;
         }
         book.castShadow = true;
-        shelf.add(book);
-        curX += bw + 0.012;
-        colorIdx++;
+        parent.add(book);
+        curX += bw + 0.008;
       }
+    };
+
+    // 1. Tall Natural-Oak Bookshelf (back-right corner next to desk & window, matching reference!)
+    const tallShelf = new THREE.Group();
+    tallShelf.position.set(2.26, 0, -2.97);
+
+    const tsW = 0.96;
+    const tsH = 2.04;
+    const tsD = 0.36;
+    for (const sx of [-tsW * 0.5, tsW * 0.5]) {
+      const side = new THREE.Mesh(new THREE.BoxGeometry(0.035, tsH, tsD), oakMat);
+      side.position.set(sx, tsH * 0.5, 0);
+      side.castShadow = true;
+      side.receiveShadow = true;
+      tallShelf.add(side);
+    }
+    const tsBack = new THREE.Mesh(new THREE.BoxGeometry(tsW, tsH, 0.02), oakMat);
+    tsBack.position.set(0, tsH * 0.5, -tsD * 0.5 + 0.01);
+    tallShelf.add(tsBack);
+
+    const tallLevels = [0.06, 0.48, 0.90, 1.32, 1.72, 2.02];
+    for (const y of tallLevels) {
+      const plank = new THREE.Mesh(new THREE.BoxGeometry(tsW, 0.03, tsD), oakMat);
+      plank.position.set(0, y, 0);
+      plank.receiveShadow = true;
+      tallShelf.add(plank);
     }
 
-    // Small Terracotta Plant Pot with Layered Foliage on Top Shelf
-    const pot = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.082, 0.06, 0.125, 14),
-      new THREE.MeshStandardMaterial({ color: 0xc26d3a, roughness: 0.72 })
+    populateShelfBooks(tallShelf, 0.495, -0.42, 6, 0);
+    populateShelfBooks(tallShelf, 0.915, -0.40, 7, 3);
+    populateShelfBooks(tallShelf, 1.335, -0.42, 5, 5);
+    populateShelfBooks(tallShelf, 1.735, -0.42, 4, 2);
+
+    // Ring binders on top shelf right + cardboard storage box on top of bookcase (just like reference!)
+    for (let b = 0; b < 3; b++) {
+      const binder = new THREE.Mesh(
+        new THREE.BoxGeometry(0.055, 0.27, 0.24),
+        bookMats[(b + 1) % bookMats.length]
+      );
+      binder.position.set(0.24 + b * 0.065, 1.87, 0.02);
+      tallShelf.add(binder);
+    }
+    const topBox = new THREE.Mesh(
+      new THREE.BoxGeometry(0.36, 0.16, 0.26),
+      new THREE.MeshStandardMaterial({ color: 0xb69974, roughness: 0.88 })
     );
-    pot.position.set(0.32, 1.92, 0.02);
-    pot.castShadow = true;
-    const soil = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.072, 0.072, 0.012, 12),
-      new THREE.MeshStandardMaterial({ color: 0x3b2818, roughness: 0.95 })
-    );
-    soil.position.set(0.32, 1.98, 0.02);
-    const leafMat = new THREE.MeshStandardMaterial({ color: 0x15803d, roughness: 0.75 });
-    for (const [lx, ly, lz, sc] of [
-      [0.32, 2.09, 0.02, 0.1],
-      [0.25, 2.06, 0.06, 0.075],
-      [0.39, 2.07, -0.02, 0.075],
-      [0.31, 2.16, -0.01, 0.068],
+    topBox.position.set(0.24, 2.115, 0);
+    topBox.castShadow = true;
+    tallShelf.add(topBox);
+    this.scene.add(tallShelf);
+
+    // 2. Low Dark-Walnut Bookshelf on the right wall foreground (matching reference foreground!)
+    const lowShelf = new THREE.Group();
+    lowShelf.position.set(2.97, 0, 1.15);
+    lowShelf.rotation.y = -Math.PI / 2;
+
+    const lsW = 1.48;
+    const lsH = 1.12;
+    const lsD = 0.36;
+    for (const sx of [-lsW * 0.5, lsW * 0.5]) {
+      const side = new THREE.Mesh(new THREE.BoxGeometry(0.036, lsH, lsD), walnutMat);
+      side.position.set(sx, lsH * 0.5, 0);
+      side.castShadow = true;
+      lowShelf.add(side);
+    }
+    const lsBack = new THREE.Mesh(new THREE.BoxGeometry(lsW, lsH, 0.02), walnutMat);
+    lsBack.position.set(0, lsH * 0.5, -lsD * 0.5 + 0.01);
+    lowShelf.add(lsBack);
+    for (const y of [0.06, 0.40, 0.74, 1.10]) {
+      const plank = new THREE.Mesh(new THREE.BoxGeometry(lsW, 0.032, lsD), walnutMat);
+      plank.position.set(0, y, 0);
+      plank.receiveShadow = true;
+      lowShelf.add(plank);
+    }
+    populateShelfBooks(lowShelf, 0.076, -0.64, 9, 1);
+    populateShelfBooks(lowShelf, 0.416, -0.62, 8, 4);
+    populateShelfBooks(lowShelf, 0.756, -0.64, 9, 2);
+
+    // Stacked flat hardcover books on top of low shelf
+    const flatBook1 = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.035, 0.19), bookMats[2]);
+    flatBook1.position.set(-0.35, 1.135, 0.01);
+    flatBook1.rotation.y = 0.08;
+    const flatBook2 = new THREE.Mesh(new THREE.BoxGeometry(0.23, 0.028, 0.17), bookMats[5]);
+    flatBook2.position.set(-0.34, 1.166, 0.01);
+    flatBook2.rotation.y = -0.05;
+    lowShelf.add(flatBook1, flatBook2);
+    this.scene.add(lowShelf);
+
+    // 3. Wire-Mesh Metal Wastebasket beside the left leg of the desk (matching reference!)
+    const binGroup = new THREE.Group();
+    binGroup.position.set(-1.14, 0, -2.26);
+
+    const meshBinMat = new THREE.MeshStandardMaterial({
+      color: 0x767f8a,
+      alphaMap: this.meshBinAlphaTex,
+      transparent: true,
+      alphaTest: 0.35,
+      side: THREE.DoubleSide,
+      roughness: 0.32,
+      metalness: 0.78,
+    });
+    const binWall = new THREE.Mesh(new THREE.CylinderGeometry(0.145, 0.105, 0.31, 20, 1, true), meshBinMat);
+    binWall.position.y = 0.155;
+    binWall.castShadow = true;
+
+    const rimMat = new THREE.MeshStandardMaterial({ color: 0x8f98a3, roughness: 0.25, metalness: 0.8 });
+    const topRim = new THREE.Mesh(new THREE.TorusGeometry(0.145, 0.006, 8, 22), rimMat);
+    topRim.rotation.x = Math.PI / 2;
+    topRim.position.y = 0.31;
+    const binBottom = new THREE.Mesh(new THREE.CylinderGeometry(0.105, 0.105, 0.008, 18), rimMat);
+    binBottom.position.y = 0.004;
+
+    // Crumpled white paper balls inside the wire wastebasket
+    const paperMat = new THREE.MeshStandardMaterial({ color: 0xebe8e0, roughness: 0.92 });
+    for (const [px, py, pz, r] of [
+      [-0.03, 0.05, 0.02, 0.042],
+      [0.04, 0.06, -0.02, 0.048],
+      [-0.01, 0.10, -0.01, 0.038],
     ] as Array<[number, number, number, number]>) {
-      const clump = new THREE.Mesh(new THREE.DodecahedronGeometry(sc, 0), leafMat);
-      clump.position.set(lx, ly, lz);
-      clump.castShadow = true;
-      shelf.add(clump);
+      const ball = new THREE.Mesh(new THREE.DodecahedronGeometry(r, 0), paperMat);
+      ball.position.set(px, py, pz);
+      ball.rotation.set(px * 12, pz * 14, py * 9);
+      binGroup.add(ball);
     }
-    shelf.add(pot, soil);
 
-    this.scene.add(shelf);
+    binGroup.add(binWall, topRim, binBottom);
+    this.scene.add(binGroup);
   }
 
   private buildCompositeDoorAndWindow(): void {
-    const frameMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.5 });
-    const doorMat = new THREE.MeshStandardMaterial({
-      map: this.warmOakTex,
-      roughness: 0.45,
-      metalness: 0.04,
-    });
-    // Metallic door handle (metalness: 0.8, roughness: 0.25)
-    const metalHandleMat = new THREE.MeshStandardMaterial({
-      color: 0xd4b06a,
+    const whiteTrimMat = new THREE.MeshStandardMaterial({ color: 0xf0ede6, roughness: 0.5 });
+    const whiteDoorMat = new THREE.MeshStandardMaterial({ color: 0xebe7de, roughness: 0.56, metalness: 0.02 });
+    const steelHandleMat = new THREE.MeshStandardMaterial({
+      color: 0xcbd3dc,
       roughness: 0.25,
       metalness: 0.8,
     });
 
-    // Composite Wood-Grain Door with Frame, Panel Moldings & Metallic Lever Handle
+    // 1. LEFT WALL ROOM DOOR (frame, matte-ivory panel, stainless lever handle + light switch — interactive: 'door')
     const doorGroup = new THREE.Group();
-    doorGroup.position.set(3.36, 0, -0.45);
-    doorGroup.rotation.y = -Math.PI / 2;
+    doorGroup.position.set(-3.17, 0, 1.42);
+    doorGroup.rotation.y = Math.PI / 2;
 
-    const jambL = new THREE.Mesh(new THREE.BoxGeometry(0.085, 2.28, 0.095), frameMat);
-    jambL.position.set(-0.52, 1.14, 0);
+    const jambL = new THREE.Mesh(new THREE.BoxGeometry(0.085, 2.26, 0.085), whiteTrimMat);
+    jambL.position.set(-0.51, 1.13, 0);
     const jambR = jambL.clone();
-    jambR.position.x = 0.52;
-    const header = new THREE.Mesh(new THREE.BoxGeometry(1.13, 0.085, 0.095), frameMat);
-    header.position.set(0, 2.28, 0);
+    jambR.position.x = 0.51;
+    const header = new THREE.Mesh(new THREE.BoxGeometry(1.11, 0.085, 0.085), whiteTrimMat);
+    header.position.set(0, 2.26, 0);
 
-    const panel = new THREE.Mesh(new THREE.BoxGeometry(0.96, 2.2, 0.05), doorMat);
-    panel.position.set(0, 1.1, 0.015);
-    panel.receiveShadow = true;
-    const recessTop = new THREE.Mesh(new THREE.BoxGeometry(0.68, 0.76, 0.022), doorMat);
-    recessTop.position.set(0, 1.56, 0.042);
-    const recessBot = new THREE.Mesh(new THREE.BoxGeometry(0.68, 0.76, 0.022), doorMat);
-    recessBot.position.set(0, 0.62, 0.042);
+    const doorPanel = new THREE.Mesh(new THREE.BoxGeometry(0.94, 2.18, 0.045), whiteDoorMat);
+    doorPanel.position.set(0, 1.09, 0.014);
+    doorPanel.receiveShadow = true;
+    doorPanel.castShadow = true;
 
-    const plate = new THREE.Mesh(new THREE.BoxGeometry(0.046, 0.16, 0.012), metalHandleMat);
-    plate.position.set(0.36, 1.05, 0.046);
-    const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.036, 10), metalHandleMat);
+    // Stainless Steel Escutcheon Plate & Lever Handle (matching left door in reference photo!)
+    const plate = new THREE.Mesh(new THREE.BoxGeometry(0.044, 0.19, 0.012), steelHandleMat);
+    plate.position.set(0.36, 1.03, 0.042);
+    const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.036, 10), steelHandleMat);
     collar.rotation.x = Math.PI / 2;
-    collar.position.set(0.36, 1.07, 0.064);
-    const lever = new THREE.Mesh(new THREE.CylinderGeometry(0.011, 0.011, 0.135, 10), metalHandleMat);
+    collar.position.set(0.36, 1.06, 0.06);
+    const lever = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, 0.135, 10), steelHandleMat);
     lever.rotation.z = Math.PI / 2;
-    lever.position.set(0.3, 1.07, 0.084);
+    lever.position.set(0.30, 1.06, 0.078);
+
+    // Wall light switch beside door frame
+    const switchPlate = new THREE.Mesh(new THREE.BoxGeometry(0.082, 0.082, 0.014), whiteTrimMat);
+    switchPlate.position.set(0.68, 1.18, 0.012);
+    const switchRocker = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.052, 0.016), whiteDoorMat);
+    switchRocker.position.set(0.68, 1.18, 0.018);
 
     const doorHit = new THREE.Mesh(
-      new THREE.BoxGeometry(1.15, 2.3, 0.35),
+      new THREE.BoxGeometry(1.16, 2.28, 0.36),
       new THREE.MeshBasicMaterial({ visible: false })
     );
-    doorHit.position.set(0, 1.15, 0.1);
+    doorHit.position.set(0, 1.14, 0.12);
     doorHit.userData.interactId = 'door' as RoomInteractTarget;
     this.interactables.push(doorHit);
-    this.targetAnchors.set('door', new THREE.Vector3(3.2, 1.2, -0.45));
+    this.targetAnchors.set('door', new THREE.Vector3(-2.98, 1.18, 1.42));
 
-    doorGroup.add(jambL, jambR, header, panel, recessTop, recessBot, plate, collar, lever, doorHit);
+    doorGroup.add(jambL, jambR, header, doorPanel, plate, collar, lever, switchPlate, switchRocker, doorHit);
     this.scene.add(doorGroup);
 
-    // Sunlit Window + Sill + Outside Sky Backdrop + Horizontal Venetian Blinds
+    // 2. RIGHT WALL SUNLIT WINDOW WITH HORIZONTAL VENETIAN BLINDS (interactive: 'window')
     const winGroup = new THREE.Group();
-    winGroup.position.set(-3.36, 1.72, -0.75);
-    winGroup.rotation.y = Math.PI / 2;
+    winGroup.position.set(3.17, 1.72, -1.25);
+    winGroup.rotation.y = -Math.PI / 2;
 
-    const winFrame = new THREE.Mesh(new THREE.BoxGeometry(1.82, 1.38, 0.09), frameMat);
-    const sill = new THREE.Mesh(new THREE.BoxGeometry(1.98, 0.055, 0.19), frameMat);
-    sill.position.set(0, -0.69, 0.05);
+    const winW = 1.62;
+    const winH = 1.44;
 
-    const skyTex = this.createCanvasTexture(256, 192, (ctx, w, h) => {
+    // Deep Architectural Window Frame & Sill
+    const frameTop = new THREE.Mesh(new THREE.BoxGeometry(winW + 0.16, 0.075, 0.11), whiteTrimMat);
+    frameTop.position.set(0, winH * 0.5 + 0.035, 0.01);
+    const frameL = new THREE.Mesh(new THREE.BoxGeometry(0.075, winH + 0.06, 0.11), whiteTrimMat);
+    frameL.position.set(-winW * 0.5 - 0.035, 0, 0.01);
+    const frameR = frameL.clone();
+    frameR.position.x = winW * 0.5 + 0.035;
+    const sill = new THREE.Mesh(new THREE.BoxGeometry(winW + 0.24, 0.052, 0.22), whiteTrimMat);
+    sill.position.set(0, -winH * 0.5 - 0.02, 0.06);
+    sill.receiveShadow = true;
+
+    // Bright Soft Overexposed Daytime Sky & Distant City Silhouette Backdrop
+    const skyTex = this.createCanvasTexture(256, 256, (ctx, w, h) => {
       const grad = ctx.createLinearGradient(0, 0, 0, h);
-      grad.addColorStop(0, '#3b82f6');
-      grad.addColorStop(0.55, '#93c5fd');
-      grad.addColorStop(1, '#e0f2fe');
+      grad.addColorStop(0, '#eef4fb');
+      grad.addColorStop(0.5, '#fffcf2');
+      grad.addColorStop(0.82, '#ebe4d8');
+      grad.addColorStop(1, '#d2c9bc');
       ctx.fillStyle = grad;
       ctx.fillRect(0, 0, w, h);
-      // Soft sunlight glow & fluffy clouds
-      const sunGrad = ctx.createRadialGradient(48, 38, 4, 48, 38, 56);
-      sunGrad.addColorStop(0, 'rgba(255, 250, 220, 0.95)');
-      sunGrad.addColorStop(1, 'rgba(255, 250, 220, 0)');
-      ctx.fillStyle = sunGrad;
-      ctx.fillRect(0, 0, w, h);
-      ctx.fillStyle = 'rgba(255,255,255,0.82)';
-      ctx.beginPath();
-      ctx.arc(140, 62, 20, 0, Math.PI * 2);
-      ctx.arc(166, 56, 26, 0, Math.PI * 2);
-      ctx.arc(194, 64, 18, 0, Math.PI * 2);
-      ctx.fill();
-      // Distant soft horizon silhouette
-      ctx.fillStyle = 'rgba(100, 148, 190, 0.25)';
-      ctx.fillRect(0, h - 24, w, 24);
+
+      // Soft distant building silhouettes
+      ctx.fillStyle = 'rgba(182, 174, 162, 0.45)';
+      ctx.fillRect(10, h - 78, 52, 78);
+      ctx.fillRect(72, h - 98, 64, 98);
+      ctx.fillRect(148, h - 68, 48, 68);
+      ctx.fillRect(202, h - 86, 46, 86);
     });
+
     const glass = new THREE.Mesh(
-      new THREE.PlaneGeometry(1.62, 1.18),
+      new THREE.PlaneGeometry(winW, winH),
       new THREE.MeshStandardMaterial({
         map: skyTex,
-        emissive: 0xcbe8ff,
+        emissive: 0xfff5e4,
         emissiveMap: skyTex,
-        emissiveIntensity: 0.72,
-        roughness: 0.15,
+        emissiveIntensity: 1.05,
+        roughness: 0.12,
       })
     );
-    glass.position.z = 0.048;
+    glass.position.z = 0.025;
 
-    const barV = new THREE.Mesh(new THREE.BoxGeometry(0.04, 1.2, 0.04), frameMat);
-    barV.position.z = 0.06;
-    const barH = new THREE.Mesh(new THREE.BoxGeometry(1.64, 0.04, 0.04), frameMat);
-    barH.position.z = 0.06;
+    // Window Mullions
+    const barV = new THREE.Mesh(new THREE.BoxGeometry(0.036, winH, 0.038), whiteTrimMat);
+    barV.position.z = 0.042;
+    const barH = new THREE.Mesh(new THREE.BoxGeometry(winW, 0.036, 0.038), whiteTrimMat);
+    barH.position.set(0, -0.06, 0.042);
 
-    // Venetian Blinds (top valance box + 7 slightly tilted horizontal louvers + pull cords)
-    const blindMat = new THREE.MeshStandardMaterial({ color: 0xf1f5f9, roughness: 0.52, metalness: 0.1 });
-    const blindHeader = new THREE.Mesh(new THREE.BoxGeometry(1.68, 0.055, 0.065), blindMat);
-    blindHeader.position.set(0, 0.59, 0.08);
-    winGroup.add(blindHeader);
+    // Crisp Horizontal Venetian Blinds covering upper 60% of the window (matching reference!)
+    const blindMat = new THREE.MeshStandardMaterial({
+      color: 0xf4f2ee,
+      roughness: 0.48,
+      metalness: 0.12,
+    });
+    const blindValance = new THREE.Mesh(new THREE.BoxGeometry(winW - 0.02, 0.052, 0.058), blindMat);
+    blindValance.position.set(0, winH * 0.5 - 0.03, 0.072);
+    winGroup.add(blindValance);
 
-    for (let i = 0; i < 7; i++) {
-      const slat = new THREE.Mesh(new THREE.BoxGeometry(1.62, 0.026, 0.008), blindMat);
-      slat.position.set(0, 0.52 - i * 0.055, 0.082);
-      slat.rotation.x = 0.42;
+    const slatCount = 13;
+    for (let i = 0; i < slatCount; i++) {
+      const slat = new THREE.Mesh(new THREE.BoxGeometry(winW - 0.04, 0.024, 0.006), blindMat);
+      slat.position.set(0, winH * 0.5 - 0.085 - i * 0.056, 0.072);
+      slat.rotation.x = 0.36;
       winGroup.add(slat);
     }
-    const cordMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.85 });
-    for (const cx of [-0.52, 0.52]) {
-      const cord = new THREE.Mesh(new THREE.CylinderGeometry(0.003, 0.003, 0.42, 6), cordMat);
-      cord.position.set(cx, 0.37, 0.084);
+
+    const cordMat = new THREE.MeshStandardMaterial({ color: 0xe2e4e8, roughness: 0.8 });
+    for (const cx of [-0.46, 0.46]) {
+      const cord = new THREE.Mesh(new THREE.CylinderGeometry(0.0025, 0.0025, 0.74, 6), cordMat);
+      cord.position.set(cx, 0.31, 0.075);
       winGroup.add(cord);
     }
 
-    // Metallic Curtain Rod & Matte Fabric Side Drapes
-    const rod = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.015, 0.015, 2.2, 12),
-      new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.8, roughness: 0.25 })
+    // Small Potted Succulent on Window Sill (matches reference window sill detail!)
+    const sillPot = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.055, 0.042, 0.09, 12),
+      new THREE.MeshStandardMaterial({ color: 0xe6dfd3, roughness: 0.72 })
     );
-    rod.rotation.z = Math.PI / 2;
-    rod.position.set(0, 0.78, 0.13);
-    winGroup.add(rod);
-
-    const drapeMat = new THREE.MeshStandardMaterial({
-      map: this.sheetFabricTex,
-      color: 0xe8edf3,
-      roughness: 0.9,
-      metalness: 0.0,
-    });
-    for (const side of [-0.95, 0.95]) {
-      for (let p = -1; p <= 1; p++) {
-        const pleat = new THREE.Mesh(new THREE.CylinderGeometry(0.052, 0.062, 1.66, 10), drapeMat);
-        pleat.position.set(side + p * 0.058, -0.04, 0.11);
-        winGroup.add(pleat);
-      }
-    }
+    sillPot.position.set(-0.52, -winH * 0.5 + 0.05, 0.11);
+    const sillLeaf = new THREE.Mesh(
+      new THREE.DodecahedronGeometry(0.06, 0),
+      new THREE.MeshStandardMaterial({ color: 0x4b6e44, roughness: 0.8 })
+    );
+    sillLeaf.position.set(-0.52, -winH * 0.5 + 0.125, 0.11);
+    winGroup.add(sillPot, sillLeaf);
 
     const winHit = new THREE.Mesh(
-      new THREE.BoxGeometry(1.85, 1.4, 0.35),
+      new THREE.BoxGeometry(winW + 0.2, winH + 0.15, 0.38),
       new THREE.MeshBasicMaterial({ visible: false })
     );
-    winHit.position.z = 0.1;
+    winHit.position.z = 0.12;
     winHit.userData.interactId = 'window' as RoomInteractTarget;
     this.interactables.push(winHit);
-    this.targetAnchors.set('window', new THREE.Vector3(-3.2, 1.55, -0.75));
+    this.targetAnchors.set('window', new THREE.Vector3(2.96, 1.56, -1.25));
 
-    winGroup.add(winFrame, sill, glass, barV, barH, winHit);
+    winGroup.add(frameTop, frameL, frameR, sill, glass, barV, barH, winHit);
     this.scene.add(winGroup);
   }
 
-  private buildWallPosters(): void {
-    const frameWoodMat = new THREE.MeshStandardMaterial({
-      color: 0x1e293b,
-      roughness: 0.32,
-      metalness: 0.45,
+  private buildWallPostersAndFrames(): void {
+    const darkFrameMat = new THREE.MeshStandardMaterial({
+      color: 0x26211e,
+      roughness: 0.38,
+      metalness: 0.15,
     });
 
-    // Poster 1: Minimalist Python / Geometric Art above the Desk
-    const poster1Tex = this.createCanvasTexture(256, 320, (ctx, w, h) => {
-      ctx.fillStyle = '#0f172a';
-      ctx.fillRect(0, 0, w, h);
-      ctx.strokeStyle = '#00ff41';
-      ctx.lineWidth = 3;
-      ctx.strokeRect(18, 18, w - 36, h - 36);
-      ctx.fillStyle = '#1e293b';
-      ctx.beginPath();
-      ctx.arc(w / 2, 130, 62, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = '#38bdf8';
-      ctx.lineWidth = 4;
-      ctx.beginPath();
-      ctx.arc(w / 2, 130, 44, 0.3, Math.PI * 1.65);
-      ctx.stroke();
-      ctx.fillStyle = '#f8fafc';
-      ctx.font = 'bold 20px monospace';
-      ctx.textAlign = 'center';
-      ctx.fillText('SYNTAX // 01', w / 2, 238);
-      ctx.fillStyle = '#00ff41';
-      ctx.font = '13px monospace';
-      ctx.fillText('def defend(): pass', w / 2, 266);
-    });
-
-    const addFramedPoster = (
+    const addWallArt = (
       x: number,
       y: number,
       z: number,
       rotY: number,
       w: number,
       h: number,
-      tex: THREE.CanvasTexture
+      tex: THREE.CanvasTexture,
+      framed: boolean
     ) => {
       const grp = new THREE.Group();
       grp.position.set(x, y, z);
       grp.rotation.y = rotY;
-      const outer = new THREE.Mesh(new THREE.BoxGeometry(w + 0.06, h + 0.06, 0.025), frameWoodMat);
-      outer.castShadow = true;
+      if (framed) {
+        const outer = new THREE.Mesh(new THREE.BoxGeometry(w + 0.065, h + 0.065, 0.024), darkFrameMat);
+        outer.castShadow = true;
+        grp.add(outer);
+      }
       const art = new THREE.Mesh(
         new THREE.PlaneGeometry(w, h),
-        new THREE.MeshStandardMaterial({ map: tex, roughness: 0.35 })
+        new THREE.MeshStandardMaterial({ map: tex, roughness: 0.65 })
       );
-      art.position.z = 0.014;
-      grp.add(outer, art);
+      art.position.z = framed ? 0.013 : 0.004;
+      grp.add(art);
       this.scene.add(grp);
     };
 
-    // Above desk right-side accent wall
-    addFramedPoster(1.48, 1.92, -3.37, 0, 0.58, 0.74, poster1Tex);
-
-    // Poster 2: Warm Architectural Sun / Mountain Minimalist Art above Bed
-    const poster2Tex = this.createCanvasTexture(320, 220, (ctx, w, h) => {
-      ctx.fillStyle = '#f8f5ef';
+    // 1. Back Wall Moody Atmospheric Landscape Poster (above bed/nightstand, matching reference!)
+    const atmosphericPosterTex = this.createCanvasTexture(256, 320, (ctx, w, h) => {
+      const g = ctx.createLinearGradient(0, 0, 0, h);
+      g.addColorStop(0, '#4f5d66');
+      g.addColorStop(0.5, '#7e898d');
+      g.addColorStop(1, '#1d2226');
+      ctx.fillStyle = g;
       ctx.fillRect(0, 0, w, h);
-      ctx.fillStyle = '#e07a5f';
+      // Silhouette ruins & distant lone figure
+      ctx.fillStyle = '#181c20';
+      ctx.fillRect(0, 120, 75, 200);
+      ctx.fillRect(195, 145, 65, 175);
       ctx.beginPath();
-      ctx.arc(215, 76, 36, 0, Math.PI * 2);
+      ctx.arc(130, 118, 38, 0, Math.PI * 2);
+      ctx.fillStyle = '#c8c2b6';
       ctx.fill();
-      ctx.fillStyle = '#3d5a80';
+      ctx.fillStyle = '#15181b';
       ctx.beginPath();
-      ctx.moveTo(20, 195);
-      ctx.lineTo(125, 86);
-      ctx.lineTo(225, 195);
-      ctx.closePath();
-      ctx.fill();
-      ctx.fillStyle = '#293241';
-      ctx.beginPath();
-      ctx.moveTo(135, 195);
-      ctx.lineTo(228, 110);
-      ctx.lineTo(300, 195);
-      ctx.closePath();
+      ctx.ellipse(128, 225, 16, 42, 0, 0, Math.PI * 2);
       ctx.fill();
     });
-    addFramedPoster(-2.15, 1.88, 3.37, Math.PI, 0.88, 0.6, poster2Tex);
+    addWallArt(-1.35, 1.98, -3.17, 0, 0.62, 0.80, atmosphericPosterTex, false);
+
+    // 2. Left Wall Dark Sci-Fi Poster + White Graphic Spec Sheet (above bed, matching reference!)
+    const scifiPosterTex = this.createCanvasTexture(256, 360, (ctx, w, h) => {
+      ctx.fillStyle = '#14171c';
+      ctx.fillRect(0, 0, w, h);
+      const glow = ctx.createRadialGradient(w / 2, 145, 10, w / 2, 145, 95);
+      glow.addColorStop(0, '#c85a32');
+      glow.addColorStop(0.55, '#2b4056');
+      glow.addColorStop(1, '#14171c');
+      ctx.fillStyle = glow;
+      ctx.fillRect(0, 0, w, h);
+      ctx.fillStyle = '#e5e7eb';
+      ctx.font = 'bold 20px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('CYBER-DEF', w / 2, 315);
+    });
+    addWallArt(-3.17, 2.02, -1.78, Math.PI / 2, 0.56, 0.82, scifiPosterTex, false);
+
+    const specSheetTex = this.createCanvasTexture(220, 280, (ctx, w, h) => {
+      ctx.fillStyle = '#f2efe8';
+      ctx.fillRect(0, 0, w, h);
+      ctx.strokeStyle = '#334155';
+      ctx.lineWidth = 2;
+      for (let r = 0; r < 3; r++) {
+        for (let c = 0; c < 3; c++) {
+          ctx.strokeRect(24 + c * 62, 32 + r * 66, 44, 44);
+        }
+      }
+      ctx.fillStyle = '#475569';
+      ctx.fillRect(24, 240, 172, 10);
+    });
+    addWallArt(-3.17, 1.78, -1.06, Math.PI / 2, 0.36, 0.48, specSheetTex, false);
+
+    // 3. Right Wall Framed Botanical Ink Print + Dark Graphic Poster (matching reference!)
+    const inkArtTex = this.createCanvasTexture(256, 320, (ctx, w, h) => {
+      ctx.fillStyle = '#ebe5d8';
+      ctx.fillRect(0, 0, w, h);
+      ctx.strokeStyle = '#2d2c2a';
+      ctx.lineWidth = 2.2;
+      ctx.beginPath();
+      ctx.moveTo(w * 0.48, h * 0.85);
+      ctx.quadraticCurveTo(w * 0.42, h * 0.5, w * 0.56, h * 0.18);
+      ctx.stroke();
+      for (let i = 0; i < 14; i++) {
+        const y = 65 + i * 14;
+        const side = i % 2 === 0 ? 1 : -1;
+        ctx.beginPath();
+        ctx.ellipse(w * 0.49 + side * 26, y, 22, 6, side * 0.45, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    });
+    addWallArt(3.17, 1.94, 0.16, -Math.PI / 2, 0.58, 0.76, inkArtTex, true);
+
+    const darkGraphicTex = this.createCanvasTexture(256, 320, (ctx, w, h) => {
+      ctx.fillStyle = '#181a1e';
+      ctx.fillRect(0, 0, w, h);
+      ctx.strokeStyle = '#cbd5e1';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(42, 260);
+      ctx.lineTo(128, 62);
+      ctx.lineTo(214, 260);
+      ctx.closePath();
+      ctx.stroke();
+      ctx.strokeStyle = '#00ff41';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(128, 180, 42, 0, Math.PI * 2);
+      ctx.stroke();
+    });
+    addWallArt(3.17, 1.96, 1.05, -Math.PI / 2, 0.62, 0.82, darkGraphicTex, false);
   }
 
   public resetOpeningAtBed(): void {
-    this.camera.position.set(-1.65, 1.32, 1.38);
-    this.yaw = -0.45;
-    this.pitch = -0.04;
+    // Positioned cleanly in the room looking toward the wall-flush desk, single monitor, sunlit right window & left bed
+    this.camera.position.set(-0.72, 1.46, 0.92);
+    this.yaw = -0.22;
+    this.pitch = -0.06;
     this.applyCameraEuler();
     this.setComputerPower(false);
     this.setRoomLights(true);
@@ -1493,38 +2184,58 @@ export class DeveloperRoom3D {
       this.pcPowerLedMat.color.setHex(0x00ff41);
       this.pcPowerLedMat.emissive.setHex(0x00ff41);
       this.pcPowerLedMat.emissiveIntensity = 1.5;
-      this.pcInteriorLedMat.emissiveIntensity = 1.4;
+      this.pcInteriorLedMat.emissiveIntensity = 1.6;
+      this.pcStripLedMat.emissiveIntensity = 1.5;
+      this.pcInteriorLight.intensity = 1.2;
     } else {
       this.monitorScreenMesh.material = this.monitorOffMat;
-      this.pcPowerLedMat.color.setHex(0x334155);
+      this.pcPowerLedMat.color.setHex(0x475569);
       this.pcPowerLedMat.emissive.setHex(0x000000);
       this.pcPowerLedMat.emissiveIntensity = 0;
-      this.pcInteriorLedMat.emissiveIntensity = 0.35;
+      this.pcInteriorLedMat.emissiveIntensity = 0.85;
+      this.pcStripLedMat.emissiveIntensity = 0.85;
+      this.pcInteriorLight.intensity = 0.72;
     }
   }
 
   public setRoomLights(on: boolean): void {
-    this.ambientLight.intensity = on ? 0.42 : 0;
-    this.hemiLight.intensity = on ? 0.88 : 0;
-    this.sunLight.intensity = on ? 1.75 : 0;
-    this.ceilingLight.intensity = on ? 1.15 : 0;
-    this.deskLampLight.intensity = on ? 1.85 : 0;
-    this.scene.environmentIntensity = on ? 0.52 : 0;
-    this.scene.background = new THREE.Color(on ? 0xdbeafe : 0x000000);
-    this.scene.fog = new THREE.FogExp2(on ? 0xeef2f6 : 0x000000, on ? 0.012 : 0.08);
+    this.ambientLight.intensity = on ? 0.28 : 0;
+    this.hemiLight.intensity = on ? 0.85 : 0;
+    this.sunLight.intensity = on ? 2.35 : 0;
+    this.ceilingLight.intensity = on ? 0.72 : 0;
+    this.deskLampLight.intensity = on ? 1.45 : 0;
+    this.pcInteriorLight.intensity = on ? 0.95 : 0;
+    this.scene.environmentIntensity = on ? 0.44 : 0;
+    this.scene.background = on ? this.dayBgColor : this.darkBgColor;
+    this.scene.fog = on ? this.dayFog : this.darkFog;
+    if (on && !this.isSoftwareGl) {
+      this.renderer.shadowMap.needsUpdate = true;
+    }
+    this.pausedRendered = false;
   }
 
   public start(): void {
     if (this.running) return;
+    if (this.frameId) {
+      cancelAnimationFrame(this.frameId);
+      clearTimeout(this.frameId);
+      this.frameId = 0;
+    }
     this.running = true;
+    this.pausedRendered = false;
     this.lastTime = performance.now();
     this.tick();
   }
 
   public stop(): void {
     this.running = false;
-    cancelAnimationFrame(this.frameId);
-    clearTimeout(this.frameId);
+    if (this.frameId) {
+      cancelAnimationFrame(this.frameId);
+      clearTimeout(this.frameId);
+      this.frameId = 0;
+    }
+    this.keys = {};
+    this.isDragging = false;
     if (document.pointerLockElement === this.renderer.domElement) {
       document.exitPointerLock();
     }
@@ -1573,8 +2284,8 @@ export class DeveloperRoom3D {
   }
 
   private applyCameraEuler(): void {
-    const euler = new THREE.Euler(this.pitch, this.yaw, 0, 'YXZ');
-    this.camera.quaternion.setFromEuler(euler);
+    _euler.set(this.pitch, this.yaw, 0, 'YXZ');
+    this.camera.quaternion.setFromEuler(_euler);
   }
 
   private bindEvents(): void {
@@ -1651,6 +2362,18 @@ export class DeveloperRoom3D {
     this.renderer.setSize(window.innerWidth, window.innerHeight);
   };
 
+  private isPositionBlocked(x: number, z: number): boolean {
+    // Wall-flush desk & chair immediate zone
+    if (x > -1.32 && x < 1.32 && z < -2.02) return true;
+    // Bed zone on the back-left wall
+    if (x < -1.45 && z < -0.68) return true;
+    // Tall bookshelf back-right corner
+    if (x > 1.56 && z < -2.42) return true;
+    // Low bookshelf right foreground wall
+    if (x > 2.42 && z > 0.22 && z < 2.08) return true;
+    return false;
+  }
+
   private updateMovement(dt: number): void {
     const speed = 2.75 * dt;
     _forward.set(-Math.sin(this.yaw), 0, -Math.cos(this.yaw)).normalize();
@@ -1672,14 +2395,15 @@ export class DeveloperRoom3D {
     }
 
     if (_moveDelta.lengthSq() > 0) {
-      const nextX = THREE.MathUtils.clamp(this.camera.position.x + _moveDelta.x, -2.7, 2.7);
-      const nextZ = THREE.MathUtils.clamp(this.camera.position.z + _moveDelta.z, -1.75, 2.7);
-      const insideDesk = nextX > -1.35 && nextX < 1.35 && nextZ < -1.85;
-      if (!insideDesk) {
-        this.camera.position.x = nextX;
-        this.camera.position.z = nextZ;
-      } else if (this.camera.position.z >= -1.85) {
-        this.camera.position.x = nextX;
+      const candX = THREE.MathUtils.clamp(this.camera.position.x + _moveDelta.x, -2.62, 2.62);
+      const candZ = THREE.MathUtils.clamp(this.camera.position.z + _moveDelta.z, -2.05, 2.62);
+
+      // Smooth axis-independent sliding collision against room furniture
+      if (!this.isPositionBlocked(candX, this.camera.position.z)) {
+        this.camera.position.x = candX;
+      }
+      if (!this.isPositionBlocked(this.camera.position.x, candZ)) {
+        this.camera.position.z = candZ;
       }
     }
   }
@@ -1693,7 +2417,6 @@ export class DeveloperRoom3D {
     if (hits.length > 0) {
       const candidate = hits[0].object.userData.interactId as RoomInteractTarget;
       const anchor = this.targetAnchors.get(candidate);
-      // Physical distance check using camera.position.distanceTo(anchor)
       if (anchor && this.camera.position.distanceTo(anchor) <= MAX_INTERACT_DISTANCE) {
         nextHover = candidate;
       }
@@ -1738,8 +2461,19 @@ export class DeveloperRoom3D {
   private tick = (): void => {
     if (!this.running) return;
     const now = performance.now();
-    const dt = Math.min((now - this.lastTime) / 1000, 0.1);
+    const dt = Math.min((now - this.lastTime) / 1000, 0.05);
     this.lastTime = now;
+
+    if (this.mode === 'paused' || this.mode === 'blackout') {
+      if (!this.pausedRendered) {
+        this.renderer.render(this.scene, this.camera);
+        this.pausedRendered = true;
+      }
+      this.frameId = requestAnimationFrame(this.tick);
+      return;
+    }
+
+    this.pausedRendered = false;
 
     if (this.mode === 'explore') {
       this.updateMovement(dt);
@@ -1767,7 +2501,7 @@ export class DeveloperRoom3D {
         if (cb) cb();
       }
     } else if (this.mode === 'ending_poweroff') {
-      if (this.camera.position.z < -0.82 && !this.keys['KeyW']) {
+      if (this.camera.position.z < -1.06 && !this.keys['KeyW']) {
         this.camera.position.z = THREE.MathUtils.damp(this.camera.position.z, this.zoomOutPos.z, 3.8, dt);
         this.camera.position.y = THREE.MathUtils.damp(this.camera.position.y, this.zoomOutPos.y, 3.8, dt);
       } else {

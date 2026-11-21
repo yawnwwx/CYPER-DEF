@@ -161,7 +161,10 @@ export class StageGameEngine {
     if (nextPaused) {
       this.paused = true;
       this.pausedAt = performance.now();
-      cancelAnimationFrame(this.rafId);
+      if (this.rafId) {
+        cancelAnimationFrame(this.rafId);
+        this.rafId = 0;
+      }
       // Pause all active timeouts preserving remaining duration
       const now = performance.now();
       for (const t of this.timeouts) {
@@ -208,7 +211,10 @@ export class StageGameEngine {
     this.pendingRafFn = null;
     this.activeInputDock = null;
     this.activeCmdInput = null;
-    cancelAnimationFrame(this.rafId);
+    if (this.rafId) {
+      cancelAnimationFrame(this.rafId);
+      this.rafId = 0;
+    }
     this.timeouts.forEach((t) => {
       t.active = false;
       clearTimeout(t.id);
@@ -221,19 +227,24 @@ export class StageGameEngine {
 
   private scheduleRaf(fn: (now: number) => void): void {
     if (this.destroyed) return;
+    if (this.rafId) {
+      cancelAnimationFrame(this.rafId);
+      this.rafId = 0;
+    }
     if (this.paused) {
       this.pendingRafFn = fn;
       return;
     }
     this.pendingRafFn = fn;
-    this.rafId = requestAnimationFrame((now) => {
+    this.rafId = requestAnimationFrame(() => {
+      this.rafId = 0;
       if (this.destroyed) return;
       if (this.paused) {
         this.pendingRafFn = fn;
         return;
       }
       this.pendingRafFn = null;
-      fn(now - this.pauseOffsetMs);
+      fn(performance.now() - this.pauseOffsetMs);
     });
   }
 
@@ -345,9 +356,9 @@ export class StageGameEngine {
     let viewW = arenaWrap.clientWidth || window.innerWidth;
     let viewH = arenaWrap.clientHeight || window.innerHeight - 140;
 
-    // High-DPI Retina Canvas Scaling
+    // High-DPI Retina Canvas Scaling (capped at 1.5 for 60fps fill-rate stability)
     const resizeCanvas = () => {
-      const dpr = window.devicePixelRatio || 1;
+      const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
       viewW = arenaWrap.clientWidth || window.innerWidth;
       viewH = arenaWrap.clientHeight || window.innerHeight - 140;
       canvas.width = Math.floor(viewW * dpr);

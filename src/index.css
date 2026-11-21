@@ -54,6 +54,13 @@ input {
   pointer-events: auto;
 }
 
+/* Pause decorative GPU animations on inactive scenes to free compositor resources */
+.cyber-scene:not(.active) .title-glitch-layer,
+.cyber-scene:not(.active) .stage-current-glow,
+.cyber-scene:not(.active) .lava-wave-core {
+  animation-play-state: paused;
+}
+
 /* Always-visible fixed Return to Room button */
 .fixed-return-btn {
   position: fixed;
@@ -98,9 +105,7 @@ input {
   width: 46px;
   height: 46px;
   border-radius: 12px;
-  background: rgba(8, 15, 22, 0.78);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  background: rgba(8, 15, 22, 0.9);
   border: 1px solid rgba(148, 163, 184, 0.35);
   color: rgba(226, 232, 240, 0.88);
   cursor: pointer;
@@ -578,10 +583,10 @@ input {
 
 @keyframes bootScrollUp {
   0% {
-    transform: translateY(72vh);
+    transform: translate3d(0, 72vh, 0);
   }
   100% {
-    transform: translateY(-28vh);
+    transform: translate3d(0, -28vh, 0);
   }
 }
 
@@ -691,11 +696,11 @@ input {
 }
 
 @keyframes lockShake {
-  0%, 100% { transform: translateX(0); }
-  20% { transform: translateX(-6px); }
-  40% { transform: translateX(6px); }
-  60% { transform: translateX(-4px); }
-  80% { transform: translateX(4px); }
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  20% { transform: translate3d(-6px, 0, 0); }
+  40% { transform: translate3d(6px, 0, 0); }
+  60% { transform: translate3d(-4px, 0, 0); }
+  80% { transform: translate3d(4px, 0, 0); }
 }
 
 .shake-error {
@@ -731,11 +736,11 @@ input {
 /* Stage 3: Ripple Expand */
 @keyframes rippleWave {
   0% {
-    transform: translate(-50%, -50%) scale(0.2);
+    transform: translate3d(-50%, -50%, 0) scale(0.2);
     opacity: 0.95;
   }
   100% {
-    transform: translate(-50%, -50%) scale(3);
+    transform: translate3d(-50%, -50%, 0) scale(3);
     opacity: 0;
   }
 }
@@ -784,10 +789,10 @@ input {
 /* Ending Credits Scroll (18s cinematic roll) */
 @keyframes creditsRoll {
   0% {
-    transform: translateY(100vh);
+    transform: translate3d(0, 100vh, 0);
   }
   100% {
-    transform: translateY(-115%);
+    transform: translate3d(0, -115%, 0);
   }
 }
 

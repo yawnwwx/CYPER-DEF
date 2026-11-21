@@ -271,9 +271,10 @@ export function runTypingEngine(rt: StageRuntime): void {
   };
   const spawnInterval = spawnIntervalMap[mode];
 
-  let last = performance.now();
+  let last = 0;
   const loop = (now: number) => {
     if (rt.isDestroyed() || rt.isFinished()) return;
+    if (last === 0) last = now;
     const dt = Math.min((now - last) / 1000, 0.05);
     last = now;
     elapsed += dt;
@@ -303,28 +304,26 @@ export function runTypingEngine(rt: StageRuntime): void {
     ctx.fillStyle = mode === 'warp' ? '#040712' : '#07090d';
     ctx.fillRect(0, 0, w, h);
 
-    // Stage 21 radial warp speed lines
+    // Stage 21 radial warp speed lines (batched into a single path stroke)
     if (mode === 'warp') {
       const cx = w / 2;
       const cy = h / 2;
       const maxR = Math.hypot(cx, cy) + 80;
       ctx.lineWidth = 1.6;
+      ctx.strokeStyle = 'rgba(0, 229, 255, 0.28)';
+      ctx.beginPath();
       for (const wl of warpLines) {
         wl.dist += wl.speed * dt;
         if (wl.dist > maxR) {
           wl.dist = 18 + Math.random() * 40;
           wl.angle = Math.random() * Math.PI * 2;
         }
-        const x1 = cx + Math.cos(wl.angle) * wl.dist;
-        const y1 = cy + Math.sin(wl.angle) * wl.dist;
-        const x2 = cx + Math.cos(wl.angle) * (wl.dist + wl.len);
-        const y2 = cy + Math.sin(wl.angle) * (wl.dist + wl.len);
-        ctx.strokeStyle = 'rgba(0, 229, 255, 0.28)';
-        ctx.beginPath();
-        ctx.moveTo(x1, y1);
-        ctx.lineTo(x2, y2);
-        ctx.stroke();
+        const cosA = Math.cos(wl.angle);
+        const sinA = Math.sin(wl.angle);
+        ctx.moveTo(cx + cosA * wl.dist, cy + sinA * wl.dist);
+        ctx.lineTo(cx + cosA * (wl.dist + wl.len), cy + sinA * (wl.dist + wl.len));
       }
+      ctx.stroke();
     }
 
     // Stage 12 dual thread divider
@@ -393,7 +392,6 @@ export function runTypingEngine(rt: StageRuntime): void {
       const distToLine = mode === 'reverse' ? p.y - lineY : lineY - p.y;
       const nearZone = !p.isTrap && distToLine <= 80;
 
-      ctx.save();
       ctx.globalAlpha = packetAlpha;
 
       const boxW = Math.max(118, p.display.length * 13 + 34);
@@ -432,7 +430,7 @@ export function runTypingEngine(rt: StageRuntime): void {
         ctx.font = 'bold 16px "Fira Code", monospace';
         ctx.fillText(p.display, p.x, p.y);
       }
-      ctx.restore();
+      ctx.globalAlpha = 1;
 
       const crossed = mode === 'reverse' ? p.y <= lineY : p.y >= lineY;
       if (crossed) {

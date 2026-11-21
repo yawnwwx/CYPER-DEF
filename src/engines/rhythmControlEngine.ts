@@ -20,7 +20,7 @@ export function runRhythmControlEngine(rt: StageRuntime): void {
     domLayer.innerHTML = `
       <div class="relative w-full h-full flex flex-col items-center justify-center gap-6 overflow-hidden select-none">
         <div id="ripple-zone" class="relative w-44 h-44 rounded-full border-2 border-[#00ff41] flex items-center justify-center bg-[#00ff41]/5">
-          <div id="s3-approach-ring" class="pointer-events-none absolute inset-0 rounded-full border-2 border-[#00e5ff] opacity-85" style="transform:scale(2.15)"></div>
+          <div id="s3-approach-ring" class="pointer-events-none absolute inset-0 rounded-full border-2 border-[#00e5ff] opacity-85 will-change-transform" style="transform:scale3d(2.15,2.15,1)"></div>
           <div id="sync-note" class="text-5xl font-black text-[#00ff41]">${currentTarget.label}</div>
         </div>
         <div id="s3-judge" class="text-xs font-code text-slate-300 h-5">파란 링이 초록 원에 다가올 때 표시된 방향키(←↑↓→)를 누르세요!</div>
@@ -28,7 +28,7 @@ export function runRhythmControlEngine(rt: StageRuntime): void {
           ${dirs.map((d) => `<button data-dir="${d.code}" class="rhythm-btn cyber-btn px-5 py-3 text-lg font-bold cursor-pointer">${d.label}</button>`).join('')}
         </div>
         <div class="absolute bottom-0 left-0 right-0 h-24 flex items-end justify-center gap-1.5 px-8 opacity-80 pointer-events-none">
-          ${Array.from({ length: 24 }, () => `<div class="viz-bar w-3 bg-[#00ff41] rounded-t" style="height:20%"></div>`).join('')}
+          ${Array.from({ length: 24 }, () => `<div class="viz-bar w-3 h-full origin-bottom bg-[#00ff41] rounded-t will-change-transform" style="transform:scaleY(0.2)"></div>`).join('')}
         </div>
       </div>
     `;
@@ -82,9 +82,10 @@ export function runRhythmControlEngine(rt: StageRuntime): void {
       }
     });
 
-    let last = performance.now();
+    let last = 0;
     const loop = (now: number) => {
       if (rt.isDestroyed() || rt.isFinished()) return;
+      if (last === 0) last = now;
       const dt = Math.min((now - last) / 1000, 0.05);
       last = now;
 
@@ -96,13 +97,14 @@ export function runRhythmControlEngine(rt: StageRuntime): void {
         judgeEl.className = 'text-xs font-code font-bold text-[#ff007f] h-5';
         nextBeat();
       }
-      approachRing.style.transform = `scale(${ringScale.toFixed(3)})`;
+      const rs = ringScale.toFixed(3);
+      approachRing.style.transform = `scale3d(${rs}, ${rs}, 1)`;
       approachRing.style.borderColor = ringScale <= 1.32 ? '#00ff41' : '#00e5ff';
 
       const t = now * 0.007;
       for (let i = 0; i < vizBars.length; i++) {
-        const h = 14 + Math.abs(Math.sin(t + i * 0.45)) * 78;
-        vizBars[i].style.height = `${h.toFixed(1)}%`;
+        const sy = 0.14 + Math.abs(Math.sin(t + i * 0.45)) * 0.78;
+        vizBars[i].style.transform = `scaleY(${sy.toFixed(3)})`;
       }
       rt.setRaf(loop);
     };
@@ -231,9 +233,10 @@ export function runRhythmControlEngine(rt: StageRuntime): void {
       }
     });
 
-    let last = performance.now();
+    let last = 0;
     const loop = (now: number) => {
       if (rt.isDestroyed() || rt.isFinished()) return;
+      if (last === 0) last = now;
       const dt = Math.min((now - last) / 1000, 0.05);
       last = now;
 
@@ -276,7 +279,10 @@ export function runRhythmControlEngine(rt: StageRuntime): void {
       ctx.lineTo(startX + totalW + 10, hitY);
       ctx.stroke();
 
-      // Update & draw notes
+      // Update & draw notes (fast layered neon glow instead of expensive per-note shadowBlur)
+      ctx.font = 'bold 13px "Fira Code", monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
       for (let i = notes.length - 1; i >= 0; i--) {
         const n = notes[i];
         n.y += noteSpeed * dt;
@@ -284,15 +290,12 @@ export function runRhythmControlEngine(rt: StageRuntime): void {
         const col = lanes[n.lane].color;
 
         ctx.fillStyle = col;
-        ctx.shadowColor = col;
-        ctx.shadowBlur = 12;
+        ctx.globalAlpha = 0.24;
+        ctx.fillRect(lx + 9, n.y - 14, laneW - 18, 28);
+        ctx.globalAlpha = 1;
         ctx.fillRect(lx + 12, n.y - 11, laneW - 24, 22);
-        ctx.shadowBlur = 0;
 
         ctx.fillStyle = '#05080f';
-        ctx.font = 'bold 13px "Fira Code", monospace';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
         ctx.fillText(lanes[n.lane].label, lx + laneW / 2, n.y);
 
         if (n.y > hitY + 76) {
@@ -367,9 +370,10 @@ export function runRhythmControlEngine(rt: StageRuntime): void {
       keys.delete(e.code);
     }, 'keyup');
 
-    let last = performance.now();
+    let last = 0;
     const loop = (now: number) => {
       if (rt.isDestroyed() || rt.isFinished()) return;
+      if (last === 0) last = now;
       const dt = Math.min((now - last) / 1000, 0.05);
       last = now;
 
@@ -401,21 +405,19 @@ export function runRhythmControlEngine(rt: StageRuntime): void {
       ctx.fillStyle = '#060910';
       ctx.fillRect(0, 0, w, h);
 
-      // Subtle grid
+      // Subtle grid (batched into a single draw call)
       ctx.strokeStyle = 'rgba(0, 255, 65, 0.06)';
       ctx.lineWidth = 1;
+      ctx.beginPath();
       for (let gx = 0; gx < w; gx += 48) {
-        ctx.beginPath();
         ctx.moveTo(gx, 0);
         ctx.lineTo(gx, h);
-        ctx.stroke();
       }
       for (let gy = 0; gy < h; gy += 48) {
-        ctx.beginPath();
         ctx.moveTo(0, gy);
         ctx.lineTo(w, gy);
-        ctx.stroke();
       }
+      ctx.stroke();
 
       // Start & Exit Pads
       ctx.fillStyle = 'rgba(0, 229, 255, 0.12)';
@@ -490,14 +492,15 @@ export function runRhythmControlEngine(rt: StageRuntime): void {
         ctx.fill();
       }
 
-      // Draw player cursor
+      // Draw player cursor (fast soft halo circle instead of per-frame shadowBlur)
+      ctx.fillStyle = invuln > 0 ? 'rgba(251, 191, 36, 0.28)' : 'rgba(0, 255, 65, 0.25)';
+      ctx.beginPath();
+      ctx.arc(player.x, player.y, player.r + 7, 0, Math.PI * 2);
+      ctx.fill();
       ctx.fillStyle = invuln > 0 ? '#fbbf24' : '#00ff41';
-      ctx.shadowColor = '#00ff41';
-      ctx.shadowBlur = 16;
       ctx.beginPath();
       ctx.arc(player.x, player.y, player.r, 0, Math.PI * 2);
       ctx.fill();
-      ctx.shadowBlur = 0;
 
       // Progress by X traversal
       const pct = Math.max(0, Math.min(99, Math.round(((player.x - 54) / Math.max(1, exitZone.x - 54)) * 100)));
@@ -540,10 +543,10 @@ export function runRhythmControlEngine(rt: StageRuntime): void {
       </div>
 
       <div class="w-full max-w-xl space-y-2">
-        <div class="relative w-full h-11 rounded-lg bg-[#111827] border-2 border-white/20 overflow-hidden">
+        <div id="s27-track" class="relative w-full h-11 rounded-lg bg-[#111827] border-2 border-white/20 overflow-hidden">
           <div id="s27-safe" class="absolute top-0 bottom-0 bg-[#00ff41]/30 border-x-2 border-[#00ff41]" style="left:60%;width:22%"></div>
-          <div id="s27-fill" class="absolute top-0 bottom-0 left-0 bg-gradient-to-r from-[#00e5ff] to-[#38bdf8] opacity-85" style="width:0%"></div>
-          <div id="s27-needle" class="absolute top-0 bottom-0 w-1.5 bg-white shadow-[0_0_12px_#ffffff]" style="left:0%"></div>
+          <div id="s27-fill" class="absolute top-0 bottom-0 left-0 w-full origin-left bg-gradient-to-r from-[#00e5ff] to-[#38bdf8] opacity-85 will-change-transform" style="transform:scaleX(0)"></div>
+          <div id="s27-needle" class="absolute top-0 bottom-0 left-0 w-1.5 bg-white shadow-[0_0_12px_#ffffff] will-change-transform" style="transform:translate3d(0,0,0)"></div>
         </div>
         <div id="s27-msg" class="text-center text-xs font-code text-slate-300">
           [ SPACE ] 키를 꾹 눌러 충전한 뒤 초록색 안전 구역에서 정확히 떼세요!
@@ -558,6 +561,7 @@ export function runRhythmControlEngine(rt: StageRuntime): void {
 
   const orbEl = domLayer.querySelector('#s27-orb') as HTMLElement;
   const pctEl = domLayer.querySelector('#s27-pct') as HTMLElement;
+  const trackEl = domLayer.querySelector('#s27-track') as HTMLElement;
   const safeEl = domLayer.querySelector('#s27-safe') as HTMLElement;
   const fillEl = domLayer.querySelector('#s27-fill') as HTMLElement;
   const needleEl = domLayer.querySelector('#s27-needle') as HTMLElement;
@@ -573,8 +577,8 @@ export function runRhythmControlEngine(rt: StageRuntime): void {
     fillSpeed = 54 + cleared * 12;
     safeEl.style.left = `${safeStart}%`;
     safeEl.style.width = `${width}%`;
-    fillEl.style.width = '0%';
-    needleEl.style.left = '0%';
+    fillEl.style.transform = 'scaleX(0)';
+    needleEl.style.transform = 'translate3d(0,0,0)';
     pctEl.textContent = '0%';
     orbEl.style.boxShadow = '0 0 18px rgba(0,229,255,0.25)';
     orbEl.style.borderColor = '#00e5ff';
@@ -631,9 +635,10 @@ export function runRhythmControlEngine(rt: StageRuntime): void {
     }
   }, 'keyup');
 
-  let last = performance.now();
+  let last = 0;
   const loop = (now: number) => {
     if (rt.isDestroyed() || rt.isFinished()) return;
+    if (last === 0) last = now;
     const dt = Math.min((now - last) / 1000, 0.05);
     last = now;
 
@@ -644,8 +649,10 @@ export function runRhythmControlEngine(rt: StageRuntime): void {
         releaseHold();
       } else {
         const inZone = charge >= safeStart && charge <= safeEnd;
-        fillEl.style.width = `${charge.toFixed(1)}%`;
-        needleEl.style.left = `${charge.toFixed(1)}%`;
+        const ratio = charge / 100;
+        const trackW = trackEl.clientWidth || 540;
+        fillEl.style.transform = `scaleX(${ratio.toFixed(4)})`;
+        needleEl.style.transform = `translate3d(${(ratio * trackW).toFixed(1)}px, 0, 0)`;
         pctEl.textContent = `${Math.round(charge)}%`;
         orbEl.style.borderColor = inZone ? '#00ff41' : '#00e5ff';
         orbEl.style.boxShadow = inZone
