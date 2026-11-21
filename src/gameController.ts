@@ -114,6 +114,10 @@ export function initCyberDef(root: HTMLElement): void {
 
       <!-- 2. MAIN TITLE SCREEN WITH CYBERPUNK HUD MENU -->
       <section id="scene-menu" class="cyber-scene menu-artwork-bg relative overflow-hidden">
+        <!-- Title-Only Background Glitch Overlay Layers (Strictly CYBER-DEF Logo Region) -->
+        <div class="title-glitch-layer title-glitch-1" aria-hidden="true"></div>
+        <div class="title-glitch-layer title-glitch-2" aria-hidden="true"></div>
+
         <!-- Cyberpunk Chamfered HUD Menu Container -->
         <nav id="main-menu-container" aria-label="Main Menu">
           <div class="hud-glass-bg" aria-hidden="true"></div>
