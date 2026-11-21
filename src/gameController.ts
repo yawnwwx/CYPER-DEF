@@ -1,5 +1,5 @@
 import { audio } from './audio';
-import { NOTEBOOK_CHAPTERS, STAGES } from './data/stages';
+import { NotebookCategory, PYTHON_NOTEBOOK_ENTRIES, STAGES } from './data/stages';
 import { formatPlayTime, RankRecord, submitClearRecord, subscribeGlobalRankings } from './rankingService';
 import { DeveloperRoom3D, RoomInteractTarget } from './room3d';
 import { StageGameEngine } from './stageEngine';
@@ -409,8 +409,20 @@ export function initCyberDef(root: HTMLElement): void {
           <div id="crosshair-dot" class="w-3 h-3 rounded-full border-2 border-slate-900/80 bg-white/60 transition-transform duration-150 shadow"></div>
         </div>
 
-        <!-- Bottom Proximity Interact Tooltip -->
-        <div id="room-interact-prompt" class="hidden fixed bottom-28 left-1/2 -translate-x-1/2 z-20 px-5 py-2.5 rounded-md bg-[rgba(15,20,25,0.9)] border border-[#00ff41] text-sm font-bold text-[#00ff41] pointer-events-none shadow-lg"></div>
+        <!-- Bottom Proximity Hold-Interact UI (Circular E Key + SVG #00FF41 Progress Ring, Zero backdrop-filter) -->
+        <div id="room-interact-prompt" class="hidden fixed bottom-28 left-1/2 -translate-x-1/2 z-20 items-center gap-3.5 px-4 py-2.5 rounded-xl bg-[rgba(15,20,25,0.92)] border border-[#00ff41]/55 pointer-events-none shadow-lg select-none">
+          <div class="relative w-12 h-12 flex items-center justify-center shrink-0">
+            <svg width="48" height="48" viewBox="0 0 48 48" class="absolute inset-0 -rotate-90 pointer-events-none">
+              <circle cx="24" cy="24" r="21" fill="none" stroke="rgba(255,255,255,0.16)" stroke-width="3.5" />
+              <circle id="room-interact-ring" cx="24" cy="24" r="21" fill="none" stroke="#00ff41" stroke-width="3.5" stroke-linecap="round" stroke-dasharray="131.95" stroke-dashoffset="131.95" />
+            </svg>
+            <div id="room-interact-keycap" class="w-9 h-9 rounded-full bg-[#091218] border border-white/30 flex items-center justify-center font-code text-base font-black text-white">E</div>
+          </div>
+          <div class="flex flex-col">
+            <span id="room-interact-label" class="text-sm font-bold text-[#e6edf3] whitespace-nowrap">꾹 눌러서 컴퓨터 사용하기</span>
+            <span class="text-[10px] font-code text-[#00ff41]/80 tracking-wider">HOLD [E] · 2.0s</span>
+          </div>
+        </div>
 
         <!-- Room Bottom Dialogue Box -->
         <div id="room-dialogue" class="hidden fixed bottom-7 left-1/2 -translate-x-1/2 z-30 w-[92vw] max-w-2xl rounded-lg bg-[rgba(15,20,25,0.92)] border-2 border-[#00ff41]/80 px-6 py-4 shadow-2xl pointer-events-none">
@@ -418,17 +430,49 @@ export function initCyberDef(root: HTMLElement): void {
           <div id="room-dialogue-text" class="text-sm sm:text-base font-medium text-white leading-relaxed"></div>
         </div>
 
-        <!-- Python Study Notebook Modal -->
-        <div id="notebook-modal" class="hidden fixed inset-0 z-40 bg-black/75 items-center justify-center p-6">
-          <div class="w-full max-w-3xl max-h-[85vh] rounded-lg bg-[#111622] border-2 border-[#00ff41]/60 flex flex-col overflow-hidden shadow-2xl">
-            <div class="flex items-center justify-between px-6 py-4 bg-[#0a0e17] border-b border-white/10">
+        <!-- Python Syntax Handbook Modal (Zero backdrop-filter for locked 60FPS 3D Room) -->
+        <div id="python-notebook-modal" class="hidden fixed inset-0 z-50 bg-[rgba(10,15,20,0.85)] items-center justify-center p-4 sm:p-6">
+          <div class="w-full max-w-4xl h-[86vh] max-h-[820px] rounded-xl bg-[#0d121a] border-2 border-[#00ff41]/65 flex flex-col overflow-hidden shadow-2xl">
+            <!-- Header -->
+            <div class="flex items-center justify-between px-5 sm:px-6 py-4 bg-[#080c12] border-b border-white/10 shrink-0">
               <div>
-                <div class="text-xs text-[#00ff41] font-bold">PYTHON STUDY NOTE</div>
-                <h3 class="text-lg font-bold text-white">파이썬 기초 지식 수첩</h3>
+                <div class="text-[11px] font-code text-[#00ff41] font-bold tracking-widest">PYTHON SYNTAX HANDBOOK · STAGE 1~30</div>
+                <h3 class="text-lg sm:text-xl font-bold text-white mt-0.5">파이썬 문법 · 함수 수첩</h3>
               </div>
-              <button id="btn-close-notebook" class="cyber-btn px-4 py-2 text-xs font-bold cursor-pointer">닫기 [ESC / E]</button>
+              <button id="btn-close-notebook" type="button" aria-label="수첩 닫기" class="px-3.5 py-1.5 rounded border border-[#00ff41]/60 bg-[#071510] hover:bg-[#00ff41]/20 text-[#00ff41] font-code text-sm font-black cursor-pointer transition">
+                [ X ]
+              </button>
             </div>
-            <div id="notebook-content" class="p-6 overflow-y-auto space-y-5 text-sm"></div>
+
+            <!-- Search Bar & Category Filter Tabs -->
+            <div class="px-5 sm:px-6 py-3.5 bg-[#0a0f17] border-b border-white/10 space-y-3 shrink-0">
+              <div class="relative flex items-center">
+                <svg class="w-4 h-4 text-[#00ff41]/80 absolute left-3.5 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="11" cy="11" r="8"></circle>
+                  <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+                <input
+                  type="text"
+                  id="notebook-search"
+                  placeholder="문법, 함수명 또는 설명 검색..."
+                  autocomplete="off"
+                  spellcheck="false"
+                  class="w-full pl-10 pr-24 py-2.5 rounded-lg bg-[#06090e] border border-white/20 focus:border-[#00ff41] focus:outline-none text-sm text-white placeholder-slate-400 font-code transition"
+                />
+                <span id="notebook-count" class="absolute right-3.5 text-[11px] font-code text-[#00ff41]/85 pointer-events-none"></span>
+              </div>
+
+              <div id="notebook-tabs" class="flex flex-wrap gap-2">
+                <button type="button" data-cat="all" class="notebook-tab-btn px-3 py-1.5 rounded-md border text-xs font-bold cursor-pointer transition">전체</button>
+                <button type="button" data-cat="types" class="notebook-tab-btn px-3 py-1.5 rounded-md border text-xs font-bold cursor-pointer transition">자료형·변수</button>
+                <button type="button" data-cat="control" class="notebook-tab-btn px-3 py-1.5 rounded-md border text-xs font-bold cursor-pointer transition">제어문·반복문</button>
+                <button type="button" data-cat="functions" class="notebook-tab-btn px-3 py-1.5 rounded-md border text-xs font-bold cursor-pointer transition">함수·내장함수</button>
+                <button type="button" data-cat="errors" class="notebook-tab-btn px-3 py-1.5 rounded-md border text-xs font-bold cursor-pointer transition">오류·디버깅</button>
+              </div>
+            </div>
+
+            <!-- Scrollable Entries List -->
+            <div id="notebook-content" class="flex-1 min-h-0 overflow-y-auto p-5 sm:p-6"></div>
           </div>
         </div>
       </section>
@@ -940,6 +984,39 @@ export function initCyberDef(root: HTMLElement): void {
     });
   };
 
+  const interactPrompt = root.querySelector('#room-interact-prompt') as HTMLElement;
+  const interactRing = root.querySelector('#room-interact-ring') as unknown as SVGCircleElement;
+  const interactKeycap = root.querySelector('#room-interact-keycap') as HTMLElement;
+  const interactLabel = root.querySelector('#room-interact-label') as HTMLElement;
+  const INTERACT_RING_CIRCUMFERENCE = 2 * Math.PI * 21; // r = 21
+
+  const updateInteractGauge = (progress: number) => {
+    if (!interactRing) return;
+    const clamped = Math.max(0, Math.min(1, progress));
+    const offset = INTERACT_RING_CIRCUMFERENCE * (1 - clamped);
+    interactRing.style.strokeDashoffset = offset.toFixed(2);
+    if (interactKeycap) {
+      if (clamped > 0) {
+        interactKeycap.style.borderColor = '#00ff41';
+        interactKeycap.style.color = '#00ff41';
+      } else {
+        interactKeycap.style.borderColor = 'rgba(255,255,255,0.3)';
+        interactKeycap.style.color = '#ffffff';
+      }
+    }
+  };
+
+  const resetInteractGauge = () => {
+    updateInteractGauge(0);
+  };
+
+  if (interactRing) {
+    interactRing.setAttribute('stroke-dasharray', INTERACT_RING_CIRCUMFERENCE.toFixed(2));
+    interactRing.setAttribute('stroke-dashoffset', INTERACT_RING_CIRCUMFERENCE.toFixed(2));
+  }
+
+  const notebookModal = root.querySelector('#python-notebook-modal') as HTMLElement;
+
   const switchScene = (next: SceneId) => {
     (Object.keys(scenes) as SceneId[]).forEach((k) => {
       if (k === next) scenes[k].classList.add('active');
@@ -964,7 +1041,13 @@ export function initCyberDef(root: HTMLElement): void {
 
     // 씬별 독립 렌더링 루프 분리: 비활성 씬의 3D WebGL 및 2D 게임 루프를 즉시 정지해 GPU/CPU 점유 0% 유지
     if (next !== 'room') {
+      room3d?.clearInputs();
       room3d?.stop();
+      notebookModal.classList.add('hidden');
+      notebookModal.classList.remove('flex');
+      interactPrompt?.classList.add('hidden');
+      interactPrompt?.classList.remove('flex');
+      resetInteractGauge();
     }
     if (next !== 'game') {
       stageEngine?.stop();
@@ -1125,14 +1208,17 @@ export function initCyberDef(root: HTMLElement): void {
     audio.keyClick();
     resetMsg.textContent = '';
 
-    // 3D 방 포인터 락 해제 및 시점 이동 일시 정지
+    // 3D 방 포인터 락 해제 및 시점 이동/E키 홀드 즉시 일시 정지
     if (currentScene === 'room') {
       if (document.pointerLockElement) {
         document.exitPointerLock();
       }
-      if (room3d && room3d.mode !== 'paused') {
-        roomModeBeforeSettings = room3d.mode;
-        room3d.mode = 'paused';
+      if (room3d) {
+        room3d.cancelHold();
+        if (room3d.mode !== 'paused') {
+          roomModeBeforeSettings = room3d.mode;
+          room3d.mode = 'paused';
+        }
       }
     }
 
@@ -1244,6 +1330,9 @@ export function initCyberDef(root: HTMLElement): void {
       } else if (!settingsModal.classList.contains('hidden')) {
         e.preventDefault();
         closeSettingsModalFlow();
+      } else if (currentScene === 'room' && !notebookModal.classList.contains('hidden')) {
+        e.preventDefault();
+        closeNotebook();
       } else if (currentScene === 'menu') {
         closeAllMenuModals();
       }
@@ -1255,10 +1344,11 @@ export function initCyberDef(root: HTMLElement): void {
   // ---------------------------------------------------------------------------
   const roomDialogue = root.querySelector('#room-dialogue') as HTMLElement;
   const roomDialogueText = root.querySelector('#room-dialogue-text') as HTMLElement;
-  const notebookModal = root.querySelector('#notebook-modal') as HTMLElement;
   const notebookContent = root.querySelector('#notebook-content') as HTMLElement;
+  const notebookSearchInput = root.querySelector('#notebook-search') as HTMLInputElement;
+  const notebookCountEl = root.querySelector('#notebook-count') as HTMLElement;
+  const notebookTabBtns = Array.from(root.querySelectorAll('.notebook-tab-btn')) as HTMLButtonElement[];
   const crosshairDot = root.querySelector('#crosshair-dot') as HTMLElement;
-  const interactPrompt = root.querySelector('#room-interact-prompt') as HTMLElement;
   const roomObjectiveHud = root.querySelector('#room-objective-hud') as HTMLElement;
 
   const showRoomDialogue = (msg: string, autoHideMs = 3600) => {
@@ -1271,35 +1361,142 @@ export function initCyberDef(root: HTMLElement): void {
     });
   };
 
-  notebookContent.innerHTML = NOTEBOOK_CHAPTERS.map(
-    (ch) => `
-      <div class="border border-white/10 bg-[#0b0e17] rounded-md p-4 space-y-2">
-        <div class="font-bold text-[#00ff41]">${ch.title}</div>
-        <pre class="p-3 bg-black/70 rounded text-xs text-emerald-200 overflow-x-auto leading-relaxed">${ch.code}</pre>
-        <p class="text-xs text-slate-300">${ch.note}</p>
+  let activeNotebookCategory: NotebookCategory = 'all';
+
+  const escapeNotebookHtml = (text: string): string =>
+    text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+
+  const notebookBadgeStyle = (cat: Exclude<NotebookCategory, 'all'>): string => {
+    switch (cat) {
+      case 'types':
+        return 'border-cyan-400/45 bg-cyan-950/50 text-cyan-300';
+      case 'control':
+        return 'border-amber-400/45 bg-amber-950/50 text-amber-300';
+      case 'functions':
+        return 'border-[#00ff41]/45 bg-[#072613] text-[#00ff41]';
+      case 'errors':
+        return 'border-rose-400/45 bg-rose-950/50 text-rose-300';
+    }
+  };
+
+  const updateNotebookTabStyles = () => {
+    notebookTabBtns.forEach((btn) => {
+      const cat = (btn.dataset.cat || 'all') as NotebookCategory;
+      if (cat === activeNotebookCategory) {
+        btn.className =
+          'notebook-tab-btn px-3 py-1.5 rounded-md border border-[#00ff41] bg-[#00ff41]/15 text-[#00ff41] text-xs font-bold cursor-pointer transition';
+      } else {
+        btn.className =
+          'notebook-tab-btn px-3 py-1.5 rounded-md border border-white/15 bg-[#080d14] hover:border-white/35 text-slate-300 text-xs font-bold cursor-pointer transition';
+      }
+    });
+  };
+
+  const renderNotebookEntries = () => {
+    const query = notebookSearchInput.value.trim().toLowerCase();
+    const filtered = PYTHON_NOTEBOOK_ENTRIES.filter((entry) => {
+      if (activeNotebookCategory !== 'all' && entry.category !== activeNotebookCategory) {
+        return false;
+      }
+      if (!query) return true;
+      const haystack = `${entry.term} ${entry.categoryLabel} ${entry.desc} ${entry.code} ${entry.keywords || ''}`.toLowerCase();
+      return haystack.includes(query);
+    });
+
+    notebookCountEl.textContent = `${filtered.length}개 항목`;
+
+    if (filtered.length === 0) {
+      notebookContent.innerHTML = `
+        <div class="h-full min-h-[220px] flex flex-col items-center justify-center text-center py-12 px-4">
+          <div class="text-base font-bold text-slate-300">검색 결과가 없습니다.</div>
+          <div class="text-xs text-slate-500 mt-1.5 font-code">다른 키워드나 카테고리를 선택해 보세요.</div>
+        </div>
+      `;
+      return;
+    }
+
+    notebookContent.innerHTML = `
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+        ${filtered
+          .map(
+            (entry) => `
+          <article class="rounded-lg border border-white/12 bg-[#090e16] hover:border-[#00ff41]/45 transition p-4 flex flex-col justify-between gap-3">
+            <div class="space-y-2">
+              <div class="flex items-start justify-between gap-2">
+                <h4 class="font-code text-base font-black text-[#00ff41] break-words">${escapeNotebookHtml(entry.term)}</h4>
+                <span class="shrink-0 px-2 py-0.5 rounded border text-[11px] font-bold ${notebookBadgeStyle(entry.category)}">${escapeNotebookHtml(entry.categoryLabel)}</span>
+              </div>
+              <p class="text-xs sm:text-[13px] text-slate-200 leading-relaxed">${escapeNotebookHtml(entry.desc)}</p>
+            </div>
+            <pre class="p-3 rounded-md bg-[#04070c] border border-white/10 font-code text-xs text-emerald-200 overflow-x-auto leading-relaxed"><code>${escapeNotebookHtml(entry.code)}</code></pre>
+          </article>
+        `
+          )
+          .join('')}
       </div>
-    `
-  ).join('');
+    `;
+  };
+
+  notebookTabBtns.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      audio.keyClick();
+      activeNotebookCategory = (btn.dataset.cat || 'all') as NotebookCategory;
+      updateNotebookTabStyles();
+      renderNotebookEntries();
+      notebookContent.scrollTop = 0;
+    });
+  });
+
+  notebookSearchInput.addEventListener('input', () => {
+    renderNotebookEntries();
+    notebookContent.scrollTop = 0;
+  });
+
+  const openNotebook = () => {
+    if (!room3d) return;
+    audio.keyClick();
+    room3d.clearInputs();
+    room3d.mode = 'paused';
+    if (document.pointerLockElement) {
+      document.exitPointerLock();
+    }
+    activeNotebookCategory = 'all';
+    notebookSearchInput.value = '';
+    updateNotebookTabStyles();
+    renderNotebookEntries();
+    notebookContent.scrollTop = 0;
+    notebookModal.classList.remove('hidden');
+    notebookModal.classList.add('flex');
+  };
 
   const closeNotebook = () => {
+    if (notebookModal.classList.contains('hidden')) return;
+    notebookSearchInput.blur();
     notebookModal.classList.add('hidden');
     notebookModal.classList.remove('flex');
     if (room3d && currentScene === 'room') {
+      room3d.clearInputs();
       room3d.mode = 'explore';
     }
   };
+
+  updateNotebookTabStyles();
+  renderNotebookEntries();
 
   root.querySelector('#btn-close-notebook')!.addEventListener('click', () => {
     audio.keyClick();
     closeNotebook();
   });
 
-  window.addEventListener('keydown', (e) => {
-    if (currentScene === 'room' && !notebookModal.classList.contains('hidden')) {
-      if (e.code === 'Escape' || e.code === 'KeyE') {
-        e.preventDefault();
-        closeNotebook();
-      }
+  notebookModal.addEventListener('click', (e) => {
+    if (e.target === notebookModal) {
+      audio.keyClick();
+      closeNotebook();
     }
   });
 
@@ -1307,21 +1504,32 @@ export function initCyberDef(root: HTMLElement): void {
     if (room3d) return;
     const mount = root.querySelector('#room-canvas-mount') as HTMLElement;
     room3d = new DeveloperRoom3D(mount, {
+      onHoldProgress: (progress) => {
+        if (currentScene !== 'room') {
+          resetInteractGauge();
+          return;
+        }
+        updateInteractGauge(progress);
+      },
       onHoverChange: (target, label) => {
-        if (target) {
-          crosshairDot.style.borderColor = '#00ff41';
-          crosshairDot.style.transform = 'scale(1.5)';
-          interactPrompt.textContent = label;
-          interactPrompt.classList.remove('hidden');
-        } else {
+        if (currentScene !== 'room' || !target) {
           crosshairDot.style.borderColor = 'rgba(15,23,42,0.8)';
           crosshairDot.style.transform = 'scale(1)';
           interactPrompt.classList.add('hidden');
+          interactPrompt.classList.remove('flex');
+          resetInteractGauge();
+          return;
         }
+        crosshairDot.style.borderColor = '#00ff41';
+        crosshairDot.style.transform = 'scale(1.5)';
+        interactLabel.textContent = label;
+        interactPrompt.classList.remove('hidden');
+        interactPrompt.classList.add('flex');
       },
       onInteract: (target: RoomInteractTarget) => {
-        if (!room3d) return;
+        if (!room3d || currentScene !== 'room') return;
         audio.unlock();
+        resetInteractGauge();
 
         if (target === 'door' || target === 'window') {
           audio.errorBuzz();
@@ -1330,11 +1538,7 @@ export function initCyberDef(root: HTMLElement): void {
         }
 
         if (target === 'notebook' && room3d.mode === 'explore') {
-          audio.keyClick();
-          room3d.mode = 'paused';
-          if (document.pointerLockElement) document.exitPointerLock();
-          notebookModal.classList.remove('hidden');
-          notebookModal.classList.add('flex');
+          openNotebook();
           return;
         }
 
@@ -1342,6 +1546,7 @@ export function initCyberDef(root: HTMLElement): void {
           if (room3d.mode === 'explore') {
             audio.hitSuccess();
             interactPrompt.classList.add('hidden');
+            interactPrompt.classList.remove('flex');
             roomDialogue.classList.add('hidden');
             room3d.powerOnAndZoomToOS(() => {
               room3d?.stop();
@@ -1357,6 +1562,7 @@ export function initCyberDef(root: HTMLElement): void {
           } else if (room3d.mode === 'ending_poweroff') {
             audio.powerDown();
             interactPrompt.classList.add('hidden');
+            interactPrompt.classList.remove('flex');
             room3d.triggerBlackout();
             setTimeout(() => {
               room3d?.stop();

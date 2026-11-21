@@ -6,7 +6,10 @@ export type RoomMode = 'explore' | 'booting_pc' | 'zooming_in' | 'paused' | 'end
 interface RoomCallbacks {
   onInteract: (target: RoomInteractTarget) => void;
   onHoverChange: (target: RoomInteractTarget | null, label: string) => void;
+  onHoldProgress?: (progress: number) => void;
 }
+
+const HOLD_DURATION_MS = 2000;
 
 interface InteractPoint {
   id: RoomInteractTarget;
@@ -63,6 +66,10 @@ export class DeveloperRoom3D {
   private lastMouseY = 0;
   private lastTarget: RoomInteractTarget | null = null;
   private lastTargetMode: RoomMode = 'paused';
+  private isHoldingE = false;
+  private holdStartTime = 0;
+  private holdTarget: RoomInteractTarget | null = null;
+  private lastReportedProgress = 0;
 
   // Reusable colors & fog (zero per-frame allocations)
   private dayBgColor = new THREE.Color(0xe9eef4);
@@ -1084,6 +1091,8 @@ export class DeveloperRoom3D {
       cancelAnimationFrame(this.roomAnimId);
       this.roomAnimId = 0;
     }
+    this.cancelHold();
+    this.clearHoverState();
     this.keys = {};
     this.isDragging = false;
     if (document.pointerLockElement === this.renderer.domElement) {
@@ -1091,7 +1100,30 @@ export class DeveloperRoom3D {
     }
   }
 
+  public cancelHold(): void {
+    this.isHoldingE = false;
+    this.holdStartTime = 0;
+    this.holdTarget = null;
+    this.reportHoldProgress(0);
+  }
+
+  public clearInputs(): void {
+    this.keys = {};
+    this.isDragging = false;
+    this.cancelHold();
+  }
+
+  private reportHoldProgress(progress: number): void {
+    const clamped = progress <= 0 ? 0 : progress >= 1 ? 1 : progress;
+    if (clamped !== this.lastReportedProgress) {
+      this.lastReportedProgress = clamped;
+      this.callbacks.onHoldProgress?.(clamped);
+    }
+  }
+
   public powerOnAndZoomToOS(onComplete: () => void): void {
+    this.cancelHold();
+    this.clearHoverState();
     this.pcBootProgress = 0;
     this.monitorScreenMesh.material = this.monitorOnMat;
     this.pcPowerLedMat.color.setHex(0x00ff41);
@@ -1112,6 +1144,7 @@ export class DeveloperRoom3D {
     this.camera.rotation.order = 'YXZ';
     this.camera.rotation.set(this.pitch, this.yaw, 0);
     this.mode = 'explore';
+    this.cancelHold();
     this.clearHoverState();
     this.start();
   }
@@ -1125,12 +1158,15 @@ export class DeveloperRoom3D {
     this.camera.rotation.order = 'YXZ';
     this.camera.rotation.set(this.pitch, this.yaw, 0);
     this.mode = 'ending_poweroff';
+    this.cancelHold();
     this.clearHoverState();
     this.start();
   }
 
   public triggerBlackout(): void {
     this.mode = 'blackout';
+    this.cancelHold();
+    this.clearHoverState();
     this.setComputerPower(false);
     this.setRoomLights(false);
     this.renderer.render(this.scene, this.camera);
@@ -1138,6 +1174,7 @@ export class DeveloperRoom3D {
   }
 
   private clearHoverState(): void {
+    this.cancelHold();
     if (this.lastTarget !== null) {
       this.lastTarget = null;
       this.callbacks.onHoverChange(null, '');
@@ -1148,10 +1185,14 @@ export class DeveloperRoom3D {
     window.addEventListener('resize', this.onResize);
     window.addEventListener('keydown', this.onKeyDown);
     window.addEventListener('keyup', this.onKeyUp);
+    window.addEventListener('blur', () => {
+      this.keys = {};
+      this.cancelHold();
+    });
 
     const dom = this.renderer.domElement;
     dom.addEventListener('mousedown', (e) => {
-      if (this.mode !== 'explore' && this.mode !== 'ending_poweroff') return;
+      if (!this.running || (this.mode !== 'explore' && this.mode !== 'ending_poweroff')) return;
       this.isDragging = true;
       this.lastMouseX = e.clientX;
       this.lastMouseY = e.clientY;
@@ -1163,9 +1204,6 @@ export class DeveloperRoom3D {
           // drag look fallback
         }
       }
-      if (this.lastTarget) {
-        this.callbacks.onInteract(this.lastTarget);
-      }
     });
 
     window.addEventListener('mouseup', () => {
@@ -1174,7 +1212,7 @@ export class DeveloperRoom3D {
 
     // Ultra-fast mouse look: direct camera.rotation.y & camera.rotation.x update with rotation.order = 'YXZ'
     window.addEventListener('mousemove', (e) => {
-      if (this.mode !== 'explore' && this.mode !== 'ending_poweroff') return;
+      if (!this.running || (this.mode !== 'explore' && this.mode !== 'ending_poweroff')) return;
       if (document.pointerLockElement === dom) {
         this.yaw -= e.movementX * 0.0022 * this.lookSensitivity;
         this.pitch -= e.movementY * 0.0022 * this.lookSensitivity;
@@ -1198,16 +1236,25 @@ export class DeveloperRoom3D {
   }
 
   private onKeyDown = (e: KeyboardEvent): void => {
+    if (!this.running || (this.mode !== 'explore' && this.mode !== 'ending_poweroff')) return;
     this.keys[e.code] = true;
-    if (e.code === 'KeyE' && (this.mode === 'explore' || this.mode === 'ending_poweroff')) {
-      if (this.lastTarget) {
-        this.callbacks.onInteract(this.lastTarget);
+    // 2-second E-key Hold Interaction (ignore key-repeat, never trigger immediately on press)
+    if (e.code === 'KeyE') {
+      if (e.repeat) return;
+      if (this.lastTarget && !this.isHoldingE) {
+        this.isHoldingE = true;
+        this.holdStartTime = performance.now();
+        this.holdTarget = this.lastTarget;
+        this.reportHoldProgress(0);
       }
     }
   };
 
   private onKeyUp = (e: KeyboardEvent): void => {
     this.keys[e.code] = false;
+    if (e.code === 'KeyE' && this.isHoldingE) {
+      this.cancelHold();
+    }
   };
 
   private onResize = (): void => {
@@ -1312,19 +1359,47 @@ export class DeveloperRoom3D {
 
     // Strict state guard: update DOM ONLY when target (or ending mode label) actually changed!
     if (bestTarget !== this.lastTarget || (bestTarget === 'computer' && this.mode !== this.lastTargetMode)) {
+      if (this.isHoldingE && bestTarget !== this.holdTarget) {
+        this.cancelHold();
+      }
       this.lastTarget = bestTarget;
       this.lastTargetMode = this.mode;
       let label = '';
-      if (bestTarget === 'notebook') label = 'Press [E] to Interact · 파이썬 수첩 읽기';
-      else if (bestTarget === 'door') label = 'Press [E] to Interact · 문 확인하기';
-      else if (bestTarget === 'window') label = 'Press [E] to Interact · 창문 확인하기';
+      if (bestTarget === 'notebook') label = '꾹 눌러서 파이썬 수첩 읽기';
+      else if (bestTarget === 'door') label = '꾹 눌러서 문 확인하기';
+      else if (bestTarget === 'window') label = '꾹 눌러서 창문 확인하기';
       else if (bestTarget === 'computer') {
         label =
           this.mode === 'ending_poweroff'
-            ? 'Press [E] to Interact · 컴퓨터 전원 완전히 끄기'
-            : 'Press [E] to Interact · 컴퓨터 켜기';
+            ? '꾹 눌러서 컴퓨터 전원 완전히 끄기'
+            : '꾹 눌러서 컴퓨터 사용하기';
       }
       this.callbacks.onHoverChange(bestTarget, label);
+    }
+  }
+
+  private updateHoldInteraction(now: number): void {
+    if (!this.isHoldingE) return;
+    if (
+      !this.running ||
+      (this.mode !== 'explore' && this.mode !== 'ending_poweroff') ||
+      !this.lastTarget ||
+      this.lastTarget !== this.holdTarget
+    ) {
+      this.cancelHold();
+      return;
+    }
+
+    const elapsed = now - this.holdStartTime;
+    const ratio = Math.min(1, Math.max(0, elapsed / HOLD_DURATION_MS));
+    this.reportHoldProgress(ratio);
+
+    if (ratio >= 1) {
+      const completedTarget = this.holdTarget;
+      this.cancelHold();
+      if (completedTarget) {
+        this.callbacks.onInteract(completedTarget);
+      }
     }
   }
 
@@ -1336,6 +1411,7 @@ export class DeveloperRoom3D {
     this.lastTime = now;
 
     if (this.mode === 'paused' || this.mode === 'blackout') {
+      if (this.isHoldingE) this.cancelHold();
       if (!this.pausedRendered) {
         this.renderer.render(this.scene, this.camera);
         this.pausedRendered = true;
@@ -1349,6 +1425,7 @@ export class DeveloperRoom3D {
     if (this.mode === 'explore') {
       this.updateMovement(dt);
       this.updateProximityTarget();
+      this.updateHoldInteraction(now);
     } else if (this.mode === 'booting_pc') {
       this.pcBootProgress = Math.min(1, this.pcBootProgress + dt * 1.45);
       if (this.pcBootProgress >= 1) {
@@ -1378,6 +1455,7 @@ export class DeveloperRoom3D {
         this.updateMovement(dt);
       }
       this.updateProximityTarget();
+      this.updateHoldInteraction(now);
     }
 
     this.renderer.render(this.scene, this.camera);
