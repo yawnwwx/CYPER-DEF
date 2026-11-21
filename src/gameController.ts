@@ -1,5 +1,6 @@
 import { audio } from './audio';
 import { NOTEBOOK_CHAPTERS, STAGES } from './data/stages';
+import { formatPlayTime, RankRecord, submitClearRecord, subscribeGlobalRankings } from './rankingService';
 import { DeveloperRoom3D, RoomInteractTarget } from './room3d';
 import { StageGameEngine } from './stageEngine';
 
@@ -102,10 +103,85 @@ export function initCyberDef(root: HTMLElement): void {
   root.innerHTML = `
     <div id="cyberdef-app" class="relative w-full h-full bg-[#0a0b0e] overflow-hidden">
 
+      <!-- MAIN MENU EXCLUSIVE BGM (M4A): 첨부 음원 파일 경로를 연결해 메인 메뉴에서만 반복 재생 -->
+      <audio id="main-menu-bgm" loop preload="auto">
+        <source src="/assets/aistudio/System_Override_61b3c393.m4a" type="audio/mp4" />
+      </audio>
+
+      <!-- IN-GAME EXCLUSIVE BGM (M4A): 해킹 게임 진입 ~ 30단계 클리어 전까지 반복 재생 (파일 경로 교체 가능) -->
+      <audio id="ingame-bgm" loop preload="auto">
+        <source src="/assets/aistudio/Neon_Cyberdrive_ad9600c7.m4a" type="audio/mp4" />
+      </audio>
+
       <!-- ALWAYS EXPOSED FIXED RETURN TO ROOM BUTTON -->
       <button id="fixed-return-room-btn" class="fixed-return-btn" title="방으로 돌아가기">
         <span>방으로 돌아가기</span>
       </button>
+
+      <!-- BOTTOM-LEFT FLOATING SETTINGS GEAR BUTTON (Visible after START: room, os, stage-select, game) -->
+      <button id="floating-settings-btn" type="button" class="floating-settings-btn" title="환경 설정 (SETTINGS)" aria-label="환경 설정 열기">
+        <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="3.2" />
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.26.604.852.997 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+        </svg>
+      </button>
+
+      <!-- IN-GAME PAUSE & 3-2-1 RESUME COUNTDOWN OVERLAY -->
+      <div id="game-pause-overlay" class="hidden fixed inset-0 z-[9995] bg-black/75 backdrop-blur-sm flex-col items-center justify-center select-none">
+        <div class="absolute top-14 left-1/2 -translate-x-1/2 px-7 py-2 rounded-md border border-[#00ff41]/70 bg-[#05140b]/90 shadow-[0_0_28px_rgba(0,255,65,0.45)]">
+          <span class="text-xl sm:text-2xl font-black font-code tracking-[0.35em] text-[#00ff41] drop-shadow-[0_0_10px_rgba(0,255,65,0.85)]">PAUSED</span>
+        </div>
+        <div id="pause-countdown-wrap" class="hidden flex-col items-center gap-3">
+          <div id="pause-countdown-num" class="text-8xl sm:text-9xl font-black font-code text-[#00ff41] drop-shadow-[0_0_32px_rgba(0,255,65,0.85)] tabular-nums">3</div>
+          <div class="text-xs sm:text-sm font-code tracking-[0.22em] text-slate-300">잠시 후 게임을 재개합니다...</div>
+        </div>
+      </div>
+
+      <!-- GLOBAL SETTINGS MODAL (Shared across Main Menu & In-Game via z-10000) -->
+      <div id="settings-modal" class="hidden fixed inset-0 z-[10000] bg-black/70 backdrop-blur-md items-center justify-center p-4">
+        <div class="w-full max-w-md rounded-lg border border-[#00ff41]/55 bg-[#0b0f17]/95 p-6 flex flex-col gap-5 shadow-[0_0_40px_rgba(0,255,65,0.22)]">
+          <div class="flex items-center justify-between border-b border-white/10 pb-3">
+            <div>
+              <div class="text-[11px] font-code text-[#00ff41] tracking-widest">SYSTEM CONFIG</div>
+              <h2 class="text-lg font-bold text-white">SETTINGS</h2>
+            </div>
+            <button id="btn-close-settings" type="button" class="text-xs text-slate-400 hover:text-white px-2.5 py-1 rounded border border-white/10 cursor-pointer">닫기 [ESC]</button>
+          </div>
+
+          <div class="space-y-4 text-xs">
+            <label class="block space-y-2">
+              <div class="flex items-center justify-between text-slate-200 font-semibold">
+                <span>효과음 볼륨 (SFX)</span>
+                <span id="val-sfx" class="font-code text-[#00ff41] tabular-nums">80%</span>
+              </div>
+              <input id="slider-sfx" type="range" min="0" max="100" value="80" class="cyber-range" />
+            </label>
+
+            <label class="block space-y-2">
+              <div class="flex items-center justify-between text-slate-200 font-semibold">
+                <span>배경음 볼륨 (BGM)</span>
+                <span id="val-bgm" class="font-code text-[#00ff41] tabular-nums">35%</span>
+              </div>
+              <input id="slider-bgm" type="range" min="0" max="100" value="35" class="cyber-range" />
+            </label>
+
+            <label class="block space-y-2">
+              <div class="flex items-center justify-between text-slate-200 font-semibold">
+                <span>마우스 시점 감도 (SENSITIVITY)</span>
+                <span id="val-sensitivity" class="font-code text-[#00ff41] tabular-nums">1.0x</span>
+              </div>
+              <input id="slider-sensitivity" type="range" min="0.4" max="2.0" step="0.1" value="1.0" class="cyber-range" />
+            </label>
+          </div>
+
+          <div class="border-t border-white/10 pt-4 flex items-center justify-between gap-3">
+            <button id="btn-reset-save" type="button" class="cyber-btn cyber-btn-pink px-4 py-2 text-xs font-bold cursor-pointer">
+              저장된 진행 데이터 초기화
+            </button>
+            <span id="settings-reset-msg" class="text-[11px] text-[#00ff41] font-medium"></span>
+          </div>
+        </div>
+      </div>
 
       <!-- 1. LINUX BOOT LOADING SEQUENCE (1.5s SCROLL + GLITCH -> MENU) -->
       <section id="scene-boot" class="cyber-scene active boot-scanlines flex-col justify-end bg-black text-[#00ff41] font-code px-6 py-8 sm:px-12 overflow-hidden">
@@ -260,52 +336,6 @@ export function initCyberDef(root: HTMLElement): void {
             </button>
           </div>
         </nav>
-
-        <!-- SETTINGS MODAL -->
-        <div id="settings-modal" class="hidden fixed inset-0 z-50 bg-black/70 backdrop-blur-md items-center justify-center p-4">
-          <div class="w-full max-w-md rounded-lg border border-[#00ff41]/55 bg-[#0b0f17]/95 p-6 flex flex-col gap-5 shadow-[0_0_40px_rgba(0,255,65,0.22)]">
-            <div class="flex items-center justify-between border-b border-white/10 pb-3">
-              <div>
-                <div class="text-[11px] font-code text-[#00ff41] tracking-widest">SYSTEM CONFIG</div>
-                <h2 class="text-lg font-bold text-white">SETTINGS</h2>
-              </div>
-              <button id="btn-close-settings" type="button" class="text-xs text-slate-400 hover:text-white px-2.5 py-1 rounded border border-white/10 cursor-pointer">닫기 [ESC]</button>
-            </div>
-
-            <div class="space-y-4 text-xs">
-              <label class="block space-y-2">
-                <div class="flex items-center justify-between text-slate-200 font-semibold">
-                  <span>효과음 볼륨 (SFX)</span>
-                  <span id="val-sfx" class="font-code text-[#00ff41] tabular-nums">80%</span>
-                </div>
-                <input id="slider-sfx" type="range" min="0" max="100" value="80" class="cyber-range" />
-              </label>
-
-              <label class="block space-y-2">
-                <div class="flex items-center justify-between text-slate-200 font-semibold">
-                  <span>배경음 볼륨 (BGM)</span>
-                  <span id="val-bgm" class="font-code text-[#00ff41] tabular-nums">35%</span>
-                </div>
-                <input id="slider-bgm" type="range" min="0" max="100" value="35" class="cyber-range" />
-              </label>
-
-              <label class="block space-y-2">
-                <div class="flex items-center justify-between text-slate-200 font-semibold">
-                  <span>마우스 시점 감도 (SENSITIVITY)</span>
-                  <span id="val-sensitivity" class="font-code text-[#00ff41] tabular-nums">1.0x</span>
-                </div>
-                <input id="slider-sensitivity" type="range" min="0.4" max="2.0" step="0.1" value="1.0" class="cyber-range" />
-              </label>
-            </div>
-
-            <div class="border-t border-white/10 pt-4 flex items-center justify-between gap-3">
-              <button id="btn-reset-save" type="button" class="cyber-btn cyber-btn-pink px-4 py-2 text-xs font-bold cursor-pointer">
-                저장된 진행 데이터 초기화
-              </button>
-              <span id="settings-reset-msg" class="text-[11px] text-[#00ff41] font-medium"></span>
-            </div>
-          </div>
-        </div>
 
         <!-- HOW TO PLAY MODAL -->
         <div id="howto-modal" class="hidden fixed inset-0 z-50 bg-black/70 backdrop-blur-md items-center justify-center p-4">
@@ -493,6 +523,27 @@ export function initCyberDef(root: HTMLElement): void {
                   </div>
                 </div>
               </div>
+              <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 text-sm items-start border-t border-slate-100 pt-3">
+                <label for="lms-player-name" class="text-slate-500 font-semibold sm:pt-2">제출자 이름</label>
+                <div class="sm:col-span-2">
+                  <input
+                    id="lms-player-name"
+                    type="text"
+                    maxlength="20"
+                    autocomplete="off"
+                    placeholder="이름 또는 닉네임을 입력하세요"
+                    class="w-full px-3.5 py-2 rounded-md border border-slate-300 bg-white text-slate-900 text-sm font-semibold focus:outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-600/20"
+                  />
+                  <p id="lms-name-error" class="hidden text-xs font-semibold text-rose-600 mt-1"></p>
+                </div>
+              </div>
+              <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 text-sm items-center border-t border-slate-100 pt-3">
+                <div class="text-slate-500 font-semibold">클리어 타임</div>
+                <div class="sm:col-span-2 flex items-center gap-2.5">
+                  <span id="lms-clear-time-display" class="inline-flex items-center px-3 py-1 rounded-md bg-slate-900 text-[#00ff41] font-code text-xs sm:text-sm font-bold tracking-wider tabular-nums">00:00.00</span>
+                  <span class="text-[11px] text-slate-500">제출 시 글로벌 실시간 랭킹에 자동 등록됩니다</span>
+                </div>
+              </div>
             </div>
 
             <div class="flex justify-end pt-1">
@@ -508,6 +559,7 @@ export function initCyberDef(root: HTMLElement): void {
               <div class="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto text-2xl font-black">✓</div>
               <h4 class="text-lg font-black text-slate-900">제출 완료</h4>
               <p class="text-sm font-semibold text-slate-700">과제가 성공적으로 제출되었습니다!</p>
+              <div id="lms-submit-meta" class="text-xs font-code font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md px-3 py-1.5"></div>
             </div>
           </div>
         </div>
@@ -657,9 +709,15 @@ export function initCyberDef(root: HTMLElement): void {
           <div class="text-xs font-code tracking-[0.35em] text-[#00ff41]">ALL SYSTEMS NORMAL</div>
           <h3 class="text-3xl sm:text-4xl font-black text-white tracking-wider">CYBER-DEF</h3>
           <p class="text-sm text-slate-400">과제가 성공적으로 제출되었습니다.</p>
-          <button id="btn-ending-restart" type="button" class="cyber-btn px-10 py-3.5 text-sm font-black tracking-[0.22em] cursor-pointer shadow-[0_0_24px_rgba(0,255,65,0.35)]">
-            다시 시작
-          </button>
+          <div id="ending-clear-summary" class="hidden px-4 py-2 rounded-md border border-[#00ff41]/35 bg-[#00ff41]/8 font-code text-xs sm:text-sm font-bold text-[#00ff41] tracking-wider tabular-nums"></div>
+          <div class="flex flex-wrap items-center justify-center gap-4 pt-1">
+            <button id="btn-ending-rank" type="button" class="cyber-btn px-10 py-3.5 text-sm font-black tracking-[0.22em] cursor-pointer shadow-[0_0_24px_rgba(0,229,255,0.3)] border-[#00e5ff] text-[#00e5ff] hover:bg-[#00e5ff]/20">
+              RANK
+            </button>
+            <button id="btn-ending-restart" type="button" class="cyber-btn px-10 py-3.5 text-sm font-black tracking-[0.22em] cursor-pointer shadow-[0_0_24px_rgba(0,255,65,0.35)]">
+              다시 시작
+            </button>
+          </div>
         </div>
       </section>
       <!-- 6. SYSTEM STANDBY SCREEN (AFTER CRT POWER-OFF) -->
@@ -673,6 +731,46 @@ export function initCyberDef(root: HTMLElement): void {
           POWER ON
         </button>
       </section>
+
+      <!-- GLOBAL REAL-TIME RANKING MODAL -->
+      <div id="rank-modal" class="hidden fixed inset-0 z-[10000] bg-black/85 backdrop-blur-md items-center justify-center p-4 sm:p-6">
+        <div class="w-full max-w-2xl max-h-[85vh] flex flex-col rounded-xl border border-[#00ff41]/55 bg-[#080d14]/96 shadow-[0_0_55px_rgba(0,255,65,0.22)] overflow-hidden">
+          <div class="px-6 py-4 border-b border-white/10 bg-[#0c1420] flex items-center justify-between gap-4">
+            <div class="space-y-0.5">
+              <div class="flex items-center gap-2.5">
+                <span class="text-[11px] font-code font-bold tracking-[0.26em] text-[#00ff41]">GLOBAL LEADERBOARD</span>
+                <span id="rank-sync-status" class="px-2 py-0.5 rounded bg-[#00ff41]/15 border border-[#00ff41]/40 text-[10px] font-code font-bold text-[#00ff41] tracking-wider">SYNCING...</span>
+              </div>
+              <h3 class="text-lg sm:text-xl font-black text-white tracking-wide">실시간 클리어 랭킹</h3>
+            </div>
+            <button id="btn-close-rank" type="button" class="cyber-btn px-3.5 py-1.5 text-xs font-code font-bold cursor-pointer">
+              닫기 [ESC]
+            </button>
+          </div>
+
+          <div class="flex-1 overflow-y-auto px-4 sm:px-6 py-4">
+            <table class="w-full text-left border-collapse">
+              <thead>
+                <tr class="border-b border-white/15 text-[11px] font-code uppercase tracking-[0.18em] text-slate-400">
+                  <th class="py-2.5 px-3 w-20">순위</th>
+                  <th class="py-2.5 px-3">플레이어 이름</th>
+                  <th class="py-2.5 px-3 text-right w-36">클리어 시간</th>
+                </tr>
+              </thead>
+              <tbody id="rank-table-body" class="divide-y divide-white/8 text-sm">
+                <tr>
+                  <td colspan="3" class="py-12 text-center font-code text-sm text-[#00ff41]">데이터베이스 동기화 중...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="px-6 py-3 border-t border-white/10 bg-[#0b111b] flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400">
+            <span id="rank-footer-note" class="font-code text-slate-300">클리어 시간이 빠를수록 상위 순위에 등록됩니다.</span>
+            <span class="font-code text-[11px] text-slate-500">REALTIME DB · AUTO SYNC</span>
+          </div>
+        </div>
+      </div>
     </div>
   `;
 
@@ -688,6 +786,159 @@ export function initCyberDef(root: HTMLElement): void {
   };
 
   const fixedReturnBtn = root.querySelector('#fixed-return-room-btn') as HTMLButtonElement;
+  const floatingSettingsBtn = root.querySelector('#floating-settings-btn') as HTMLButtonElement;
+  const pauseOverlay = root.querySelector('#game-pause-overlay') as HTMLElement;
+  const pauseCountdownWrap = root.querySelector('#pause-countdown-wrap') as HTMLElement;
+  const pauseCountdownNum = root.querySelector('#pause-countdown-num') as HTMLElement;
+  const mainMenuBgm = root.querySelector('#main-menu-bgm') as HTMLAudioElement;
+  const ingameBgm = root.querySelector('#ingame-bgm') as HTMLAudioElement;
+  const initialBgmSlider = root.querySelector('#slider-bgm') as HTMLInputElement;
+  const initialBgmVol = Math.max(0, Math.min(1, Number(initialBgmSlider.value) / 100));
+  mainMenuBgm.volume = initialBgmVol;
+  ingameBgm.volume = initialBgmVol;
+  let stage30ClearedThisSession = false;
+
+  // Playtime measurement & global ranking state
+  let runStartTimeMs = 0;
+  let runPausedTotalMs = 0;
+  let pauseStartedAtMs = 0;
+  let clearElapsedMs = 0;
+  let submittedPlayerName = '';
+  let myRankKey: string | null = null;
+  let unsubscribeRankings: (() => void) | null = null;
+
+  const flushPauseElapsed = () => {
+    if (pauseStartedAtMs > 0) {
+      runPausedTotalMs += Math.max(0, Date.now() - pauseStartedAtMs);
+      pauseStartedAtMs = 0;
+    }
+  };
+
+  const captureStage30ClearTime = () => {
+    flushPauseElapsed();
+    if (clearElapsedMs === 0) {
+      const elapsed = runStartTimeMs > 0 ? Date.now() - runStartTimeMs - runPausedTotalMs : 0;
+      clearElapsedMs = Math.max(1000, elapsed);
+    }
+  };
+
+  // Global in-game pause & 3-2-1 resume countdown state
+  let isGamePaused = false;
+  let isCountdownActive = false;
+  let pauseCountdownTimers: number[] = [];
+  let roomModeBeforeSettings: DeveloperRoom3D['mode'] | null = null;
+
+  const clearPauseCountdown = () => {
+    pauseCountdownTimers.forEach((id) => window.clearTimeout(id));
+    pauseCountdownTimers = [];
+    isCountdownActive = false;
+    floatingSettingsBtn.disabled = false;
+  };
+
+  const resetPauseState = () => {
+    flushPauseElapsed();
+    clearPauseCountdown();
+    isGamePaused = false;
+    stageEngine?.setPaused(false);
+    pauseOverlay.classList.add('hidden');
+    pauseOverlay.classList.remove('flex');
+    pauseCountdownWrap.classList.add('hidden');
+    pauseCountdownWrap.classList.remove('flex');
+  };
+
+  let bgmUnlockCleanup: (() => void) | null = null;
+
+  const removeBgmUnlockListeners = () => {
+    if (bgmUnlockCleanup) {
+      bgmUnlockCleanup();
+      bgmUnlockCleanup = null;
+    }
+  };
+
+  const stopMainMenuBgm = () => {
+    removeBgmUnlockListeners();
+    mainMenuBgm.pause();
+    try {
+      mainMenuBgm.currentTime = 0;
+    } catch {
+      // ignore if media metadata not yet loaded
+    }
+  };
+
+  const attachBgmAutoplayFallback = () => {
+    removeBgmUnlockListeners();
+
+    const tryResumeOnInteraction = (e: Event) => {
+      if (currentScene !== 'menu') {
+        removeBgmUnlockListeners();
+        return;
+      }
+      // 첫 클릭이 START 또는 종료 확인 버튼인 경우에는 BGM을 재생하지 않고 즉시 정리
+      const target = e.target as HTMLElement | null;
+      if (target && target.closest('#btn-start, #btn-confirm-quit')) {
+        removeBgmUnlockListeners();
+        return;
+      }
+      removeBgmUnlockListeners();
+      mainMenuBgm.volume = Math.max(0, Math.min(1, Number(initialBgmSlider.value) / 100));
+      mainMenuBgm.play().catch(() => {
+        // still blocked; ignore silently
+      });
+    };
+
+    window.addEventListener('pointerdown', tryResumeOnInteraction, { capture: true });
+    window.addEventListener('keydown', tryResumeOnInteraction, { capture: true });
+
+    bgmUnlockCleanup = () => {
+      window.removeEventListener('pointerdown', tryResumeOnInteraction, { capture: true });
+      window.removeEventListener('keydown', tryResumeOnInteraction, { capture: true });
+    };
+  };
+
+  const playMainMenuBgm = () => {
+    if (currentScene !== 'menu') return;
+    removeBgmUnlockListeners();
+    mainMenuBgm.volume = Math.max(0, Math.min(1, Number(initialBgmSlider.value) / 100));
+    try {
+      mainMenuBgm.currentTime = 0;
+    } catch {
+      // ignore if media metadata not yet loaded
+    }
+    const playPromise = mainMenuBgm.play();
+    if (playPromise && typeof playPromise.catch === 'function') {
+      playPromise.catch(() => {
+        if (currentScene === 'menu') {
+          attachBgmAutoplayFallback();
+        }
+      });
+    }
+  };
+
+  const stopAndResetIngameBgm = () => {
+    ingameBgm.pause();
+    try {
+      ingameBgm.currentTime = 0;
+    } catch {
+      // ignore if media metadata not yet loaded
+    }
+  };
+
+  const pauseIngameBgm = () => {
+    ingameBgm.pause();
+  };
+
+  const playOrResumeIngameBgm = () => {
+    if (isSystemRestored || stage30ClearedThisSession) {
+      stopAndResetIngameBgm();
+      return;
+    }
+    ingameBgm.volume = Math.max(0, Math.min(1, Number(initialBgmSlider.value) / 100));
+    // 이미 재생 중이라면 currentTime을 초기화하지 않고 끊김 없이 이어서 재생
+    if (!ingameBgm.paused) return;
+    ingameBgm.play().catch(() => {
+      // ignore autoplay rejection if any
+    });
+  };
 
   const switchScene = (next: SceneId) => {
     (Object.keys(scenes) as SceneId[]).forEach((k) => {
@@ -696,10 +947,36 @@ export function initCyberDef(root: HTMLElement): void {
     });
     currentScene = next;
 
+    if (next === 'menu') {
+      playMainMenuBgm();
+    } else {
+      stopMainMenuBgm();
+    }
+
+    if (next === 'stage-select' || next === 'game') {
+      playOrResumeIngameBgm();
+    } else if (next === 'room' && sessionHacked && !isSystemRestored && !stage30ClearedThisSession) {
+      // 30단계 클리어 전 방으로 잠시 나갔다가 돌아올 때 이어서 재생하도록 일시정지
+      pauseIngameBgm();
+    } else {
+      stopAndResetIngameBgm();
+    }
+
+    if (next !== 'game') {
+      resetPauseState();
+    }
+
     if (next === 'os' || next === 'stage-select' || next === 'game') {
       fixedReturnBtn.classList.add('visible');
     } else {
       fixedReturnBtn.classList.remove('visible');
+    }
+
+    // 좌측 하단 톱니바퀴 설정 버튼: 부팅/메인 메뉴/엔딩/대기 화면에서는 숨기고 게임 진행 화면에서만 노출
+    if (next === 'room' || next === 'os' || next === 'stage-select' || next === 'game') {
+      floatingSettingsBtn.classList.add('visible');
+    } else {
+      floatingSettingsBtn.classList.remove('visible');
     }
   };
 
@@ -766,6 +1043,7 @@ export function initCyberDef(root: HTMLElement): void {
   };
 
   root.querySelector('#btn-start')!.addEventListener('click', () => {
+    stopMainMenuBgm();
     audio.unlock();
     audio.hitSuccess();
     closeAllMenuModals();
@@ -791,9 +1069,100 @@ export function initCyberDef(root: HTMLElement): void {
     openModal(quitModal);
   });
 
-  root.querySelector('#btn-close-settings')!.addEventListener('click', () => {
+  const startResumeCountdown = () => {
+    clearPauseCountdown();
+    isCountdownActive = true;
+    floatingSettingsBtn.disabled = true;
+    pauseOverlay.classList.remove('hidden');
+    pauseOverlay.classList.add('flex');
+    pauseCountdownWrap.classList.remove('hidden');
+    pauseCountdownWrap.classList.add('flex');
+
+    const showTick = (num: number) => {
+      pauseCountdownNum.textContent = String(num);
+      pauseCountdownNum.classList.remove('pause-count-pop');
+      void pauseCountdownNum.offsetWidth;
+      pauseCountdownNum.classList.add('pause-count-pop');
+      audio.bootBeep();
+    };
+
+    showTick(3);
+    pauseCountdownTimers.push(window.setTimeout(() => showTick(2), 1000));
+    pauseCountdownTimers.push(window.setTimeout(() => showTick(1), 2000));
+    pauseCountdownTimers.push(
+      window.setTimeout(() => {
+        audio.hitSuccess();
+        flushPauseElapsed();
+        clearPauseCountdown();
+        pauseOverlay.classList.add('hidden');
+        pauseOverlay.classList.remove('flex');
+        pauseCountdownWrap.classList.add('hidden');
+        pauseCountdownWrap.classList.remove('flex');
+        isGamePaused = false;
+        if (currentScene === 'game') {
+          stageEngine?.setPaused(false);
+        }
+      }, 3000)
+    );
+  };
+
+  const openSettingsModalFromInGame = () => {
+    if (isCountdownActive) return;
+    if (!settingsModal.classList.contains('hidden')) return;
+
+    audio.unlock();
+    audio.keyClick();
+    resetMsg.textContent = '';
+
+    // 3D 방 포인터 락 해제 및 시점 이동 일시 정지
+    if (currentScene === 'room') {
+      if (document.pointerLockElement) {
+        document.exitPointerLock();
+      }
+      if (room3d && room3d.mode !== 'paused') {
+        roomModeBeforeSettings = room3d.mode;
+        room3d.mode = 'paused';
+      }
+    }
+
+    // 1~30단계 인게임 도중이면 즉시 일시정지 + PAUSED 오버레이 표시
+    if (currentScene === 'game' && stageEngine?.isStageActive()) {
+      if (pauseStartedAtMs === 0) {
+        pauseStartedAtMs = Date.now();
+      }
+      isGamePaused = true;
+      stageEngine.setPaused(true);
+      pauseCountdownWrap.classList.add('hidden');
+      pauseCountdownWrap.classList.remove('flex');
+      pauseOverlay.classList.remove('hidden');
+      pauseOverlay.classList.add('flex');
+    }
+
+    openModal(settingsModal);
+  };
+
+  const closeSettingsModalFlow = () => {
+    if (settingsModal.classList.contains('hidden')) return;
     audio.keyClick();
     closeModal(settingsModal);
+
+    if (currentScene === 'room') {
+      if (room3d && roomModeBeforeSettings) {
+        room3d.mode = roomModeBeforeSettings;
+      }
+      roomModeBeforeSettings = null;
+      return;
+    }
+
+    if (currentScene === 'game' && isGamePaused) {
+      startResumeCountdown();
+    }
+  };
+
+  floatingSettingsBtn.addEventListener('click', openSettingsModalFromInGame);
+
+  root.querySelector('#btn-close-settings')!.addEventListener('click', () => {
+    closeSettingsModalFlow();
   });
 
   root.querySelector('#btn-close-howto')!.addEventListener('click', () => {
@@ -807,6 +1176,7 @@ export function initCyberDef(root: HTMLElement): void {
   });
 
   root.querySelector('#btn-confirm-quit')!.addEventListener('click', () => {
+    stopMainMenuBgm();
     audio.powerDown();
     closeModal(quitModal);
     cyberAppEl.classList.remove('crt-power-off');
@@ -833,7 +1203,10 @@ export function initCyberDef(root: HTMLElement): void {
   sliderBgm.addEventListener('input', () => {
     const pct = Number(sliderBgm.value);
     valBgm.textContent = `${pct}%`;
-    audio.setBgmVolume(pct / 100);
+    const vol = Math.max(0, Math.min(1, pct / 100));
+    audio.setBgmVolume(vol);
+    mainMenuBgm.volume = vol;
+    ingameBgm.volume = vol;
   });
 
   sliderSens.addEventListener('input', () => {
@@ -852,8 +1225,17 @@ export function initCyberDef(root: HTMLElement): void {
   });
 
   window.addEventListener('keydown', (e) => {
-    if (e.code === 'Escape' && currentScene === 'menu') {
-      closeAllMenuModals();
+    if (e.code === 'Escape') {
+      const rankModalEl = root.querySelector('#rank-modal') as HTMLElement | null;
+      if (rankModalEl && !rankModalEl.classList.contains('hidden')) {
+        e.preventDefault();
+        closeRankModal();
+      } else if (!settingsModal.classList.contains('hidden')) {
+        e.preventDefault();
+        closeSettingsModalFlow();
+      } else if (currentScene === 'menu') {
+        closeAllMenuModals();
+      }
     }
   });
 
@@ -979,6 +1361,14 @@ export function initCyberDef(root: HTMLElement): void {
   const startOpeningAtBed = () => {
     sessionHacked = false;
     isSystemRestored = false;
+    stage30ClearedThisSession = false;
+    runStartTimeMs = Date.now();
+    runPausedTotalMs = 0;
+    pauseStartedAtMs = 0;
+    clearElapsedMs = 0;
+    submittedPlayerName = '';
+    myRankKey = null;
+    stopAndResetIngameBgm();
     clearOsTimers();
     ensureRoom3D();
     roomObjectiveHud.textContent = '목표: 책상 위 컴퓨터에 다가가 전원을 켜세요';
@@ -1084,8 +1474,12 @@ export function initCyberDef(root: HTMLElement): void {
   const osBrowserTitle = root.querySelector('#os-browser-title') as HTMLElement;
   const btnCloseBrowser = root.querySelector('#btn-close-browser') as HTMLButtonElement;
   const btnSubmitAssignment = root.querySelector('#btn-submit-assignment') as HTMLButtonElement;
+  const lmsPlayerNameInput = root.querySelector('#lms-player-name') as HTMLInputElement;
+  const lmsNameError = root.querySelector('#lms-name-error') as HTMLElement;
+  const lmsClearTimeDisplay = root.querySelector('#lms-clear-time-display') as HTMLElement;
   const lmsStatusBadge = root.querySelector('#lms-status-badge') as HTMLElement;
   const lmsSubmitPopup = root.querySelector('#lms-submit-popup') as HTMLElement;
+  const lmsSubmitMeta = root.querySelector('#lms-submit-meta') as HTMLElement;
   const osFadeCurtain = root.querySelector('#os-fade-curtain') as HTMLElement;
   let assignmentSubmitted = false;
 
@@ -1110,6 +1504,7 @@ export function initCyberDef(root: HTMLElement): void {
 
   const enterRestoredOS = (showReliefDialogue = true) => {
     clearOsTimers();
+    captureStage30ClearTime();
     isSystemRestored = true;
     osSequenceStarted = false;
     assignmentSubmitted = false;
@@ -1120,6 +1515,11 @@ export function initCyberDef(root: HTMLElement): void {
     osBrowserWindow.classList.remove('flex');
     lmsSubmitPopup.classList.add('hidden');
     lmsSubmitPopup.classList.remove('flex');
+    lmsPlayerNameInput.disabled = false;
+    lmsPlayerNameInput.value = submittedPlayerName;
+    lmsNameError.classList.add('hidden');
+    lmsNameError.textContent = '';
+    lmsClearTimeDisplay.textContent = formatPlayTime(clearElapsedMs);
     btnSubmitAssignment.disabled = false;
     btnSubmitAssignment.textContent = '과제 제출하기';
     lmsStatusBadge.textContent = '미제출 · 마감 임박';
@@ -1152,11 +1552,16 @@ export function initCyberDef(root: HTMLElement): void {
 
   const openRestoredBrowser = (browserName: 'Chrome' | 'Microsoft Edge') => {
     audio.hitSuccess();
+    captureStage30ClearTime();
     osDialogue.classList.add('hidden');
     osBrowserTitle.textContent = `${browserName} — 대학교 LMS · 웹 프로그래밍 과제 제출`;
+    lmsClearTimeDisplay.textContent = formatPlayTime(clearElapsedMs);
     osBrowserWindow.classList.remove('hidden');
     osBrowserWindow.classList.add('flex');
     osStatusMsg.textContent = `${browserName} 실행 중 · 최종 웹 프로젝트 과제 제출 페이지`;
+    if (!assignmentSubmitted) {
+      window.setTimeout(() => lmsPlayerNameInput.focus(), 60);
+    }
   };
 
   btnCloseBrowser.addEventListener('click', () => {
@@ -1166,17 +1571,38 @@ export function initCyberDef(root: HTMLElement): void {
     osBrowserWindow.classList.remove('flex');
   });
 
-  btnSubmitAssignment.addEventListener('click', () => {
+  const handleAssignmentSubmit = async () => {
     if (assignmentSubmitted) return;
+    const rawName = lmsPlayerNameInput.value.trim();
+    if (!rawName) {
+      audio.errorBuzz();
+      lmsNameError.textContent = '제출자 이름을 입력해 주세요.';
+      lmsNameError.classList.remove('hidden');
+      lmsPlayerNameInput.focus();
+      return;
+    }
+
+    lmsNameError.classList.add('hidden');
+    lmsNameError.textContent = '';
     assignmentSubmitted = true;
-    audio.stageClear();
+    captureStage30ClearTime();
+    lmsPlayerNameInput.disabled = true;
     btnSubmitAssignment.disabled = true;
+    btnSubmitAssignment.textContent = '데이터베이스 등록 중...';
+
+    const result = await submitClearRecord(rawName, clearElapsedMs);
+    myRankKey = result.key;
+    submittedPlayerName = result.record.name;
+
+    audio.stageClear();
     btnSubmitAssignment.textContent = '제출 완료됨';
     lmsStatusBadge.textContent = '제출 완료';
     lmsStatusBadge.className = 'px-3 py-1 rounded-full bg-emerald-100 text-emerald-700 text-xs font-bold';
+    lmsSubmitMeta.textContent = `${result.record.name} · CLEAR TIME ${result.record.timeText}`;
     lmsSubmitPopup.classList.remove('hidden');
     lmsSubmitPopup.classList.add('flex');
     fixedReturnBtn.classList.remove('visible');
+    floatingSettingsBtn.classList.remove('visible');
 
     osTimers.push(
       window.setTimeout(() => {
@@ -1189,6 +1615,17 @@ export function initCyberDef(root: HTMLElement): void {
         );
       }, 1500)
     );
+  };
+
+  btnSubmitAssignment.addEventListener('click', () => {
+    void handleAssignmentSubmit();
+  });
+
+  lmsPlayerNameInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      void handleAssignmentSubmit();
+    }
   });
 
   root.querySelectorAll('.os-icon').forEach((icon) => {
@@ -1309,11 +1746,19 @@ export function initCyberDef(root: HTMLElement): void {
     },
     onRecordClear: (stageId: number) => {
       recordStageClear(stageId);
+      if (stageId === 30) {
+        captureStage30ClearTime();
+        stage30ClearedThisSession = true;
+        stopAndResetIngameBgm();
+      }
     },
     onStageClear: (stageId: number) => {
       recordStageClear(stageId);
 
       if (stageId === 30) {
+        captureStage30ClearTime();
+        stage30ClearedThisSession = true;
+        stopAndResetIngameBgm();
         stageEngine?.stop();
         runMalwareUninstallSequence();
       } else {
@@ -1340,7 +1785,12 @@ export function initCyberDef(root: HTMLElement): void {
   const uninstallStatus = root.querySelector('#uninstall-status') as HTMLElement;
 
   const runMalwareUninstallSequence = () => {
+    captureStage30ClearTime();
+    stage30ClearedThisSession = true;
+    stopAndResetIngameBgm();
+    resetPauseState();
     fixedReturnBtn.classList.remove('visible');
+    floatingSettingsBtn.classList.remove('visible');
     uninstallOverlay.classList.remove('hidden', 'bg-sky-950/65');
     uninstallOverlay.classList.add('flex', 'bg-black/90');
     uninstallCard.className =
@@ -1401,13 +1851,161 @@ export function initCyberDef(root: HTMLElement): void {
 
   const creditsTrack = root.querySelector('#ending-credits-track') as HTMLElement;
   const endingActions = root.querySelector('#ending-actions') as HTMLElement;
+  const endingClearSummary = root.querySelector('#ending-clear-summary') as HTMLElement;
   const btnSkipCredits = root.querySelector('#btn-skip-credits') as HTMLButtonElement;
+  const btnEndingRank = root.querySelector('#btn-ending-rank') as HTMLButtonElement;
+  const rankModal = root.querySelector('#rank-modal') as HTMLElement;
+  const rankTableBody = root.querySelector('#rank-table-body') as HTMLElement;
+  const rankSyncStatus = root.querySelector('#rank-sync-status') as HTMLElement;
+  const rankFooterNote = root.querySelector('#rank-footer-note') as HTMLElement;
+  const btnCloseRank = root.querySelector('#btn-close-rank') as HTMLButtonElement;
+
+  const renderRankLoading = () => {
+    rankTableBody.replaceChildren();
+    const tr = document.createElement('tr');
+    const td = document.createElement('td');
+    td.colSpan = 3;
+    td.className = 'py-12 text-center font-code text-sm text-[#00ff41]';
+    td.textContent = '데이터베이스 동기화 중...';
+    tr.appendChild(td);
+    rankTableBody.appendChild(tr);
+  };
+
+  const renderRankTable = (records: RankRecord[], source: 'firebase' | 'local') => {
+    if (source === 'firebase') {
+      rankSyncStatus.textContent = 'LIVE · FIREBASE';
+      rankSyncStatus.className =
+        'px-2 py-0.5 rounded bg-[#00ff41]/15 border border-[#00ff41]/45 text-[10px] font-code font-bold text-[#00ff41] tracking-wider';
+    } else {
+      rankSyncStatus.textContent = 'OFFLINE · LOCAL';
+      rankSyncStatus.className =
+        'px-2 py-0.5 rounded bg-amber-500/15 border border-amber-400/45 text-[10px] font-code font-bold text-amber-300 tracking-wider';
+    }
+
+    rankTableBody.replaceChildren();
+
+    if (records.length === 0) {
+      const tr = document.createElement('tr');
+      const td = document.createElement('td');
+      td.colSpan = 3;
+      td.className = 'py-12 text-center text-sm text-slate-400';
+      td.textContent = '아직 등록된 클리어 기록이 없습니다.';
+      tr.appendChild(td);
+      rankTableBody.appendChild(tr);
+      rankFooterNote.textContent = '첫 번째 클리어 기록을 등록해 보세요.';
+      return;
+    }
+
+    let myRankIndex = -1;
+
+    records.forEach((rec, index) => {
+      const rankNum = index + 1;
+      const isMe = Boolean(myRankKey && rec.key === myRankKey);
+      if (isMe) myRankIndex = rankNum;
+
+      const tr = document.createElement('tr');
+      if (isMe) {
+        tr.className =
+          'bg-[#00ff41]/14 text-[#00ff41] shadow-[inset_3px_0_0_#00ff41] font-bold transition-colors';
+      } else {
+        tr.className = 'text-slate-200 hover:bg-white/5 transition-colors';
+      }
+
+      const tdRank = document.createElement('td');
+      tdRank.className = 'py-3 px-3 font-code font-black tabular-nums';
+      tdRank.textContent = `${rankNum}위`;
+      if (!isMe && rankNum === 1) {
+        tdRank.classList.add('text-amber-300');
+      } else if (!isMe && rankNum === 2) {
+        tdRank.classList.add('text-slate-200');
+      } else if (!isMe && rankNum === 3) {
+        tdRank.classList.add('text-amber-600');
+      }
+
+      const tdName = document.createElement('td');
+      tdName.className = 'py-3 px-3 font-semibold';
+      const nameWrap = document.createElement('div');
+      nameWrap.className = 'flex items-center gap-2 min-w-0';
+      const nameSpan = document.createElement('span');
+      nameSpan.className = 'truncate';
+      nameSpan.textContent = rec.name;
+      nameWrap.appendChild(nameSpan);
+
+      if (isMe) {
+        const badge = document.createElement('span');
+        badge.className =
+          'shrink-0 px-1.5 py-0.5 rounded bg-[#00ff41] text-black font-code text-[10px] font-black tracking-wider';
+        badge.textContent = 'MY RECORD';
+        nameWrap.appendChild(badge);
+      }
+      tdName.appendChild(nameWrap);
+
+      const tdTime = document.createElement('td');
+      tdTime.className = 'py-3 px-3 text-right font-code font-bold tabular-nums';
+      tdTime.textContent = rec.timeText || formatPlayTime(rec.timeMs);
+
+      tr.appendChild(tdRank);
+      tr.appendChild(tdName);
+      tr.appendChild(tdTime);
+      rankTableBody.appendChild(tr);
+    });
+
+    if (myRankIndex > 0) {
+      rankFooterNote.textContent = `총 ${records.length}명 등록 · 내 순위: ${myRankIndex}위 (${formatPlayTime(clearElapsedMs)})`;
+    } else {
+      rankFooterNote.textContent = `총 ${records.length}명의 실시간 클리어 기록이 동기화되었습니다.`;
+    }
+  };
+
+  function closeRankModal() {
+    if (unsubscribeRankings) {
+      unsubscribeRankings();
+      unsubscribeRankings = null;
+    }
+    closeModal(rankModal);
+  }
+
+  const openRankModal = () => {
+    audio.keyClick();
+    if (unsubscribeRankings) {
+      unsubscribeRankings();
+      unsubscribeRankings = null;
+    }
+    rankSyncStatus.textContent = 'SYNCING...';
+    rankSyncStatus.className =
+      'px-2 py-0.5 rounded bg-[#00ff41]/15 border border-[#00ff41]/40 text-[10px] font-code font-bold text-[#00ff41] tracking-wider';
+    renderRankLoading();
+    openModal(rankModal);
+    unsubscribeRankings = subscribeGlobalRankings((records, source) => {
+      renderRankTable(records, source);
+    });
+  };
+
+  btnEndingRank.addEventListener('click', openRankModal);
+
+  btnCloseRank.addEventListener('click', () => {
+    audio.keyClick();
+    closeRankModal();
+  });
+
+  rankModal.addEventListener('click', (e) => {
+    if (e.target === rankModal) {
+      audio.keyClick();
+      closeRankModal();
+    }
+  });
 
   const finishEndingCredits = () => {
     window.clearTimeout(endingTimer);
     creditsTrack.classList.remove('credits-roll-anim');
     creditsTrack.classList.add('hidden');
     btnSkipCredits.classList.add('hidden');
+    if (submittedPlayerName && clearElapsedMs > 0) {
+      endingClearSummary.textContent = `${submittedPlayerName} · CLEAR TIME ${formatPlayTime(clearElapsedMs)}`;
+      endingClearSummary.classList.remove('hidden');
+    } else {
+      endingClearSummary.classList.add('hidden');
+    }
     if (currentScene === 'ending') {
       endingActions.classList.remove('opacity-0', 'pointer-events-none');
       endingActions.classList.add('opacity-100', 'pointer-events-auto');
@@ -1416,6 +2014,7 @@ export function initCyberDef(root: HTMLElement): void {
 
   const startEndingCredits = () => {
     window.clearTimeout(endingTimer);
+    closeRankModal();
     endingActions.classList.add('opacity-0', 'pointer-events-none');
     endingActions.classList.remove('opacity-100', 'pointer-events-auto');
     creditsTrack.classList.remove('hidden', 'credits-roll-anim');
@@ -1435,6 +2034,7 @@ export function initCyberDef(root: HTMLElement): void {
   });
 
   root.querySelector('#btn-ending-restart')!.addEventListener('click', () => {
+    closeRankModal();
     audio.hitSuccess();
     window.location.reload();
   });

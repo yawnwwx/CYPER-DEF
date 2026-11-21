@@ -121,13 +121,28 @@ const RHYTHM_CONTROL_STAGES = new Set([3, 13, 17, 23, 27]);
 const RAPID_MASH_STAGES = new Set([4, 14, 22]);
 const CODE_BOSS_STAGES = new Set([5, 10, 15, 20, 25, 30]);
 
+interface ManagedTimeout {
+  id: number;
+  fn: () => void;
+  remaining: number;
+  startedAt: number;
+  active: boolean;
+}
+
 export class StageGameEngine {
   private root: HTMLElement;
   private callbacks: StageEngineCallbacks;
   private rafId = 0;
-  private timeouts: number[] = [];
+  private pendingRafFn: ((now: number) => void) | null = null;
+  private timeouts: ManagedTimeout[] = [];
   private cleanupFns: Array<() => void> = [];
   private destroyed = false;
+  private paused = false;
+  private pausedAt = 0;
+  private pauseOffsetMs = 0;
+  private stageFinished = false;
+  private activeInputDock: HTMLElement | null = null;
+  private activeCmdInput: HTMLInputElement | null = null;
   private particlePool = new ParticlePool(260);
   private crackPng: string;
 
@@ -137,26 +152,111 @@ export class StageGameEngine {
     this.crackPng = makeCrackPngDataUrl();
   }
 
+  public isStageActive(): boolean {
+    return !this.destroyed && !this.stageFinished;
+  }
+
+  public setPaused(nextPaused: boolean): void {
+    if (this.destroyed || this.paused === nextPaused) return;
+    if (nextPaused) {
+      this.paused = true;
+      this.pausedAt = performance.now();
+      cancelAnimationFrame(this.rafId);
+      // Pause all active timeouts preserving remaining duration
+      const now = performance.now();
+      for (const t of this.timeouts) {
+        if (!t.active) continue;
+        clearTimeout(t.id);
+        t.remaining = Math.max(0, t.remaining - (now - t.startedAt));
+      }
+      if (this.activeCmdInput) {
+        this.activeCmdInput.blur();
+        this.activeCmdInput.disabled = true;
+      }
+    } else {
+      const pauseDelta = performance.now() - this.pausedAt;
+      this.pauseOffsetMs += pauseDelta;
+      this.paused = false;
+      // Resume all paused timeouts with exact remaining duration
+      const now = performance.now();
+      for (const t of this.timeouts) {
+        if (!t.active) continue;
+        t.startedAt = now;
+        t.id = window.setTimeout(() => {
+          t.active = false;
+          if (!this.destroyed && !this.paused) t.fn();
+        }, t.remaining);
+      }
+      if (this.activeCmdInput) {
+        this.activeCmdInput.disabled = false;
+        if (this.activeInputDock && !this.activeInputDock.classList.contains('hidden')) {
+          this.activeCmdInput.focus();
+        }
+      }
+      if (this.pendingRafFn) {
+        const resumeFn = this.pendingRafFn;
+        this.pendingRafFn = null;
+        this.scheduleRaf(resumeFn);
+      }
+    }
+  }
+
   public stop(): void {
     this.destroyed = true;
+    this.paused = false;
+    this.stageFinished = false;
+    this.pendingRafFn = null;
+    this.activeInputDock = null;
+    this.activeCmdInput = null;
     cancelAnimationFrame(this.rafId);
-    this.timeouts.forEach((id) => clearTimeout(id));
+    this.timeouts.forEach((t) => {
+      t.active = false;
+      clearTimeout(t.id);
+    });
     this.timeouts = [];
     this.cleanupFns.forEach((fn) => fn());
     this.cleanupFns = [];
     this.particlePool.clear();
   }
 
+  private scheduleRaf(fn: (now: number) => void): void {
+    if (this.destroyed) return;
+    if (this.paused) {
+      this.pendingRafFn = fn;
+      return;
+    }
+    this.pendingRafFn = fn;
+    this.rafId = requestAnimationFrame((now) => {
+      if (this.destroyed) return;
+      if (this.paused) {
+        this.pendingRafFn = fn;
+        return;
+      }
+      this.pendingRafFn = null;
+      fn(now - this.pauseOffsetMs);
+    });
+  }
+
   private addTimeout(fn: () => void, ms: number): void {
-    const id = window.setTimeout(() => {
-      if (!this.destroyed) fn();
-    }, ms);
-    this.timeouts.push(id);
+    const entry: ManagedTimeout = {
+      id: 0,
+      fn,
+      remaining: ms,
+      startedAt: performance.now(),
+      active: true,
+    };
+    this.timeouts.push(entry);
+    if (!this.paused) {
+      entry.id = window.setTimeout(() => {
+        entry.active = false;
+        if (!this.destroyed && !this.paused) fn();
+      }, ms);
+    }
   }
 
   private onKey(handler: (e: KeyboardEvent) => void, type: 'keydown' | 'keyup' = 'keydown'): void {
     const wrapped = (e: KeyboardEvent) => {
-      if (!this.destroyed) handler(e);
+      if (!this.destroyed && !this.paused) handler(e);
     };
     window.addEventListener(type, wrapped);
     this.cleanupFns.push(() => window.removeEventListener(type, wrapped));
@@ -165,6 +265,9 @@ export class StageGameEngine {
   public startStage(stageId: number): void {
     this.stop();
     this.destroyed = false;
+    this.paused = false;
+    this.pauseOffsetMs = 0;
+    this.stageFinished = false;
 
     const stage = STAGES[stageId - 1];
 
@@ -211,7 +314,7 @@ export class StageGameEngine {
           <div id="game-dom" class="absolute inset-0 w-full h-full overflow-hidden"></div>
         </div>
 
-        <div id="game-input-dock" class="hidden px-5 py-3 bg-[#10131a] border-t border-white/10 flex items-center gap-3">
+        <div id="game-input-dock" class="hidden pl-20 pr-5 py-3 bg-[#10131a] border-t border-white/10 flex items-center gap-3">
           <span class="text-xs font-bold text-[#00ff41] whitespace-nowrap font-code">PYTHON &gt;&gt;&gt;</span>
           <input id="game-cmd-input" type="text" autocomplete="off" spellcheck="false"
             placeholder="코드를 입력하거나 키보드로 직접 타이핑하세요..."
@@ -273,6 +376,7 @@ export class StageGameEngine {
       audio.errorBuzz();
       if (hp <= 0) {
         finished = true;
+        this.stageFinished = true;
         this.showFailOverlay(domLayer, () => this.startStage(stageId));
       }
     };
@@ -282,6 +386,7 @@ export class StageGameEngine {
       if (finished && !force) return;
       winDispatched = true;
       finished = true;
+      this.stageFinished = true;
       setProgress(100, '100%');
       audio.stageClear();
       this.callbacks.onRecordClear?.(stageId);
@@ -296,6 +401,9 @@ export class StageGameEngine {
       });
     };
 
+    this.activeInputDock = inputDock;
+    this.activeCmdInput = cmdInput;
+
     const enableTypingDock = (
       onBufferChange: (val: string) => void,
       onEnter?: (val: string) => void,
@@ -304,16 +412,22 @@ export class StageGameEngine {
       inputDock.classList.remove('hidden');
       if (placeholder) cmdInput.placeholder = placeholder;
       cmdInput.value = '';
-      cmdInput.focus();
+      if (!this.paused) cmdInput.focus();
 
       const handleInput = () => {
+        if (this.paused) return;
         audio.keyClick();
         onBufferChange(cmdInput.value);
       };
       const handleEnter = () => {
+        if (this.paused) return;
         if (onEnter) onEnter(cmdInput.value);
       };
       const handleKeyDown = (e: KeyboardEvent) => {
+        if (this.paused) {
+          e.preventDefault();
+          return;
+        }
         if (e.key === 'Enter') {
           e.preventDefault();
           handleEnter();
@@ -351,6 +465,7 @@ export class StageGameEngine {
       isFinished: () => finished,
       setFinished: (val: boolean) => {
         finished = val;
+        if (val) this.stageFinished = true;
       },
       setProgress,
       damage,
@@ -360,7 +475,7 @@ export class StageGameEngine {
       addTimeout: (fn, ms) => this.addTimeout(fn, ms),
       addCleanup: (fn) => this.cleanupFns.push(fn),
       setRaf: (fn) => {
-        this.rafId = requestAnimationFrame(fn);
+        this.scheduleRaf(fn);
       },
       spawnBurst: (cx, cy, count, colorA, colorB) =>
         this.particlePool.spawnBurst(cx, cy, count, colorA, colorB),

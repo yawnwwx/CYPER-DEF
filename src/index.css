@@ -86,6 +86,77 @@ input {
   box-shadow: 0 0 18px rgba(0, 255, 65, 0.4);
 }
 
+/* Bottom-Left Floating Cyberpunk Gear Settings Button */
+.floating-settings-btn {
+  position: fixed;
+  left: 20px;
+  bottom: 20px;
+  z-index: 9998;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 12px;
+  background: rgba(8, 15, 22, 0.78);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  color: rgba(226, 232, 240, 0.88);
+  cursor: pointer;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.5);
+  transition: color 0.25s ease, border-color 0.25s ease, background-color 0.25s ease, box-shadow 0.25s ease, opacity 0.2s ease;
+}
+
+.floating-settings-btn.visible {
+  display: inline-flex;
+}
+
+.floating-settings-btn svg {
+  transition: transform 0.32s cubic-bezier(0.22, 1, 0.36, 1), filter 0.25s ease;
+}
+
+.floating-settings-btn:hover:not(:disabled) {
+  color: #00ff41;
+  border-color: #00ff41;
+  background: rgba(6, 26, 14, 0.88);
+  box-shadow: 0 0 18px rgba(0, 255, 65, 0.55), inset 0 0 10px rgba(0, 255, 65, 0.18);
+}
+
+.floating-settings-btn:hover:not(:disabled) svg {
+  transform: rotate(90deg);
+  filter: drop-shadow(0 0 6px rgba(0, 255, 65, 0.85));
+}
+
+.floating-settings-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Pause Countdown Pop Animation (3 -> 2 -> 1) */
+@keyframes pauseCountPop {
+  0% {
+    opacity: 0;
+    transform: scale(0.45);
+  }
+  28% {
+    opacity: 1;
+    transform: scale(1.22);
+  }
+  58% {
+    opacity: 1;
+    transform: scale(0.96);
+  }
+  100% {
+    opacity: 0.2;
+    transform: scale(0.84);
+  }
+}
+
+.pause-count-pop {
+  animation: pauseCountPop 0.96s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
 /* Custom OS Wallpaper */
 .os-desktop-bg {
   background-image: url('/assets/aistudio/image_b0aff5d4.png');
