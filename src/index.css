@@ -1,0 +1,584 @@
+@import "tailwindcss";
+
+:root {
+  --bg-charcoal: #0a0b0e;
+  --surface-charcoal: #14171f;
+  --neon-green: #00ff41;
+  --neon-pink: #ff007f;
+  --neon-cyan: #00e5ff;
+  --text-main: #e6edf3;
+  --font-ui: 'Pretendard', 'Noto Sans KR', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --font-code: 'Fira Code', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background-color: var(--bg-charcoal);
+  color: var(--text-main);
+  font-family: var(--font-ui);
+}
+
+.font-code,
+code,
+pre,
+input {
+  font-family: var(--font-code);
+}
+
+/* Smooth Scene Management via opacity, z-index, pointer-events */
+.cyber-scene {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  opacity: 0;
+  z-index: 1;
+  pointer-events: none;
+  transition: opacity 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.cyber-scene.active {
+  opacity: 1;
+  z-index: 20;
+  pointer-events: auto;
+}
+
+/* Always-visible fixed Return to Room button */
+.fixed-return-btn {
+  position: fixed;
+  top: 14px;
+  right: 18px;
+  z-index: 9999;
+  display: none;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: rgba(15, 23, 42, 0.88);
+  border: 1px solid rgba(0, 255, 65, 0.55);
+  color: #00ff41;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 700;
+  border-radius: 6px;
+  cursor: pointer;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45);
+  transition: transform 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.fixed-return-btn.visible {
+  display: inline-flex;
+}
+
+.fixed-return-btn:hover {
+  transform: translateY(-1px);
+  background: rgba(0, 255, 65, 0.16);
+  box-shadow: 0 0 18px rgba(0, 255, 65, 0.4);
+}
+
+/* Custom OS Wallpaper */
+.os-desktop-bg {
+  background-image: url('/assets/aistudio/image_b0aff5d4.png');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+/* Main Title High-Res Artwork Background (clean chair backrest) */
+.menu-artwork-bg {
+  background-image: url('/assets/aistudio/image_a0a978e7.png');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+/* Cyberpunk Chamfered HUD Menu Container */
+#main-menu-container {
+  position: absolute;
+  left: 50%;
+  bottom: 10%;
+  transform: translateX(-50%);
+  width: clamp(300px, 27vw, 390px);
+  padding: 14px 16px 20px;
+  z-index: 20;
+  user-select: none;
+}
+
+.hud-glass-bg {
+  position: absolute;
+  inset: 0;
+  background: rgba(6, 14, 10, 0.78);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  clip-path: polygon(
+    18px 0%,
+    calc(100% - 18px) 0%,
+    100% 18px,
+    100% calc(100% - 18px),
+    calc(100% - 18px) 100%,
+    18px 100%,
+    0% calc(100% - 18px),
+    0% 18px
+  );
+  box-shadow: inset 0 0 28px rgba(0, 255, 65, 0.14);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.hud-glass-bg::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 22% 18%, rgba(0, 255, 65, 0.16), transparent 52%),
+    linear-gradient(180deg, rgba(0, 255, 65, 0.08) 0%, rgba(0, 0, 0, 0.25) 100%);
+  pointer-events: none;
+}
+
+.hud-frame-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: visible;
+  filter: drop-shadow(0 0 8px rgba(0, 255, 65, 0.7));
+  z-index: 2;
+}
+
+.hud-menu-list {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+}
+
+.hud-divider {
+  width: 100%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(0, 255, 65, 0.35), transparent);
+  margin: 2px 0;
+  pointer-events: none;
+}
+
+.hud-menu-btn {
+  position: relative;
+  width: 100%;
+  height: clamp(46px, 5.8vh, 56px);
+  padding: 0 24px 0 42px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 22px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  color: rgba(240, 253, 244, 0.92);
+  font-family: var(--font-ui);
+  font-size: clamp(13px, 1.05vw, 15px);
+  font-weight: 600;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition:
+    background 0.22s ease,
+    border-color 0.22s ease,
+    box-shadow 0.22s ease,
+    color 0.22s ease;
+}
+
+.hud-menu-btn-start {
+  background: linear-gradient(90deg, rgba(0, 255, 65, 0.22), rgba(0, 255, 65, 0.04));
+  border: none;
+  box-shadow: inset 0 0 18px rgba(0, 255, 65, 0.16);
+  color: #ffffff;
+  font-weight: 800;
+  font-size: clamp(15px, 1.2vw, 17px);
+  margin-bottom: 4px;
+  clip-path: polygon(
+    10px 0%,
+    calc(100% - 10px) 0%,
+    100% 10px,
+    100% calc(100% - 10px),
+    calc(100% - 10px) 100%,
+    10px 100%,
+    0% calc(100% - 10px),
+    0% 10px
+  );
+}
+
+.hud-start-border {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  filter: drop-shadow(0 0 6px rgba(0, 255, 65, 0.65));
+}
+
+.hud-btn-icon {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(248, 250, 252, 0.92);
+  transition: color 0.22s ease, filter 0.22s ease, transform 0.22s ease;
+}
+
+.hud-btn-icon-start {
+  color: #00ff41;
+  filter: drop-shadow(0 0 8px rgba(0, 255, 65, 0.92));
+}
+
+.hud-btn-label {
+  display: inline-block;
+  transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1), color 0.22s ease, text-shadow 0.22s ease;
+}
+
+.hud-menu-btn:hover,
+.hud-menu-btn:focus-visible {
+  outline: none;
+  background: linear-gradient(
+    90deg,
+    rgba(0, 255, 65, 0.34) 0%,
+    rgba(0, 255, 65, 0.14) 65%,
+    rgba(0, 255, 65, 0.04) 100%
+  );
+  border-color: rgba(0, 255, 65, 0.65);
+  box-shadow:
+    inset 0 0 18px rgba(0, 255, 65, 0.24),
+    0 0 16px rgba(0, 255, 65, 0.28);
+  color: #00ff41;
+}
+
+.hud-menu-btn:hover .hud-btn-icon,
+.hud-menu-btn:focus-visible .hud-btn-icon {
+  color: #00ff41;
+  filter: drop-shadow(0 0 10px rgba(0, 255, 65, 0.95));
+  transform: scale(1.06);
+}
+
+.hud-menu-btn:hover .hud-btn-label,
+.hud-menu-btn:focus-visible .hud-btn-label {
+  color: #00ff41;
+  transform: translateX(5px);
+  text-shadow: 0 0 12px rgba(0, 255, 65, 0.85);
+}
+
+.hud-menu-btn:active {
+  background: linear-gradient(
+    90deg,
+    rgba(0, 255, 65, 0.45) 0%,
+    rgba(0, 255, 65, 0.2) 100%
+  );
+}
+
+/* CRT Power-Off Collapse Effect */
+@keyframes crtPowerOff {
+  0% {
+    transform: scaleY(1) scaleX(1);
+    filter: brightness(1);
+    opacity: 1;
+  }
+  42% {
+    transform: scaleY(0.012) scaleX(1.04);
+    filter: brightness(2.6);
+    opacity: 1;
+  }
+  78% {
+    transform: scaleY(0.008) scaleX(0.08);
+    filter: brightness(3.2);
+    opacity: 1;
+  }
+  100% {
+    transform: scaleY(0) scaleX(0);
+    filter: brightness(0);
+    opacity: 0;
+  }
+}
+
+.crt-power-off {
+  animation: crtPowerOff 0.62s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  transform-origin: center center;
+}
+
+/* Custom Range Slider for Settings Modal */
+.cyber-range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  outline: none;
+}
+
+.cyber-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #00ff41;
+  border: 2px solid #0a0b0e;
+  box-shadow: 0 0 10px rgba(0, 255, 65, 0.8);
+  cursor: pointer;
+}
+
+.cyber-range::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #00ff41;
+  border: 2px solid #0a0b0e;
+  box-shadow: 0 0 10px rgba(0, 255, 65, 0.8);
+  cursor: pointer;
+}
+
+/* 1. Linux Boot Sequence Terminal Scroll & Scanlines */
+.boot-scanlines::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(0, 0, 0, 0.24) 0px,
+    rgba(0, 0, 0, 0.24) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  z-index: 5;
+}
+
+@keyframes bootScrollUp {
+  0% {
+    transform: translateY(72vh);
+  }
+  100% {
+    transform: translateY(-28vh);
+  }
+}
+
+.boot-log-scroll {
+  animation: bootScrollUp 1.5s cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
+  will-change: transform;
+}
+
+.os-taskbar-glass {
+  background: rgba(15, 23, 42, 0.72);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border-top: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+/* Cyberpunk Neon Buttons */
+.cyber-btn {
+  position: relative;
+  border: 1px solid rgba(0, 255, 65, 0.45);
+  background: rgba(16, 20, 26, 0.92);
+  color: #00ff41;
+  font-family: var(--font-ui);
+  border-radius: 6px;
+  transition: transform 0.15s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 0.15s cubic-bezier(0.16, 1, 0.3, 1),
+    background-color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.cyber-btn:hover {
+  transform: translateY(-1px);
+  background: rgba(0, 255, 65, 0.14);
+  border-color: #00ff41;
+  box-shadow: 0 0 18px rgba(0, 255, 65, 0.42), inset 0 0 10px rgba(0, 255, 65, 0.15);
+}
+
+.cyber-btn-pink {
+  border-color: rgba(255, 0, 127, 0.55);
+  color: #ff007f;
+}
+
+.cyber-btn-pink:hover {
+  background: rgba(255, 0, 127, 0.15);
+  border-color: #ff007f;
+  box-shadow: 0 0 18px rgba(255, 0, 127, 0.45), inset 0 0 10px rgba(255, 0, 127, 0.18);
+}
+
+/* Strong Glitch Effect */
+@keyframes strongGlitch {
+  0% {
+    transform: translate(0, 0) skew(0deg);
+    filter: hue-rotate(0deg);
+  }
+  20% {
+    transform: translate(-10px, 4px) skew(-6deg);
+    clip-path: inset(10% 0 38% 0);
+  }
+  40% {
+    transform: translate(12px, -5px) skew(6deg);
+    clip-path: inset(48% 0 15% 0);
+    filter: invert(0.85) hue-rotate(90deg);
+  }
+  60% {
+    transform: translate(-8px, -2px) skew(-4deg);
+    clip-path: inset(22% 0 58% 0);
+  }
+  80% {
+    transform: translate(8px, 5px) skew(8deg);
+    clip-path: inset(6% 0 12% 0);
+  }
+  100% {
+    transform: translate(0, 0) skew(0deg);
+    clip-path: inset(0 0 0 0);
+    filter: none;
+  }
+}
+
+.glitch-burst {
+  animation: strongGlitch 0.38s steps(2, end) infinite;
+}
+
+/* OS Red Flash */
+@keyframes osRedFlash {
+  0%, 100% { background-color: rgba(255, 0, 60, 0); }
+  25%, 75% { background-color: rgba(255, 0, 60, 0.42); }
+  50% { background-color: rgba(255, 0, 60, 0.14); }
+}
+
+.os-red-flash {
+  animation: osRedFlash 0.5s ease-in-out 2;
+}
+
+/* Stage Select Glow & Shake */
+@keyframes currentStageGlow {
+  0%, 100% {
+    box-shadow: 0 0 10px rgba(0, 255, 65, 0.4), inset 0 0 8px rgba(0, 255, 65, 0.2);
+    border-color: #00ff41;
+  }
+  50% {
+    box-shadow: 0 0 24px rgba(0, 255, 65, 0.9), inset 0 0 14px rgba(0, 255, 65, 0.35);
+    border-color: #a7ffbe;
+  }
+}
+
+.stage-current-glow {
+  animation: currentStageGlow 1.5s ease-in-out infinite;
+}
+
+@keyframes lockShake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-6px); }
+  40% { transform: translateX(6px); }
+  60% { transform: translateX(-4px); }
+  80% { transform: translateX(4px); }
+}
+
+.shake-error {
+  animation: lockShake 0.32s ease-in-out;
+  border-color: #ff007f !important;
+}
+
+/* Stage 2: CSS mix-blend-mode + Hover Pulse + Click Melt */
+.stage2-error-word {
+  mix-blend-mode: difference;
+  color: #ff2a55;
+  font-weight: 800;
+  cursor: pointer;
+  display: inline-block;
+  transition: transform 0.65s cubic-bezier(0.55, 0, 1, 0.45), opacity 0.65s ease;
+}
+
+@keyframes errorPulse {
+  0%, 100% { transform: scale(1); text-shadow: 0 0 8px #ff007f; }
+  50% { transform: scale(1.25); text-shadow: 0 0 20px #ff007f; }
+}
+
+.stage2-error-word:hover {
+  animation: errorPulse 0.45s ease-in-out infinite;
+}
+
+.stage2-error-word.melting {
+  transform: translateY(150px) scaleY(3.4) scaleX(0.42);
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Stage 3: Ripple Expand */
+@keyframes rippleWave {
+  0% {
+    transform: translate(-50%, -50%) scale(0.2);
+    opacity: 0.95;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(3);
+    opacity: 0;
+  }
+}
+
+.rhythm-ripple {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 160px;
+  height: 160px;
+  border-radius: 9999px;
+  border: 3px solid #00ff41;
+  pointer-events: none;
+  animation: rippleWave 0.65s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Stage 4: 3D scale3d Popup */
+.ddos-popup-3d {
+  transform-style: preserve-3d;
+  box-shadow: 0 20px 42px rgba(0, 0, 0, 0.78), 0 0 18px rgba(255, 0, 127, 0.45);
+  will-change: transform;
+}
+
+/* Stage 30: Lava Wave & Whiteout */
+@keyframes lavaWave {
+  0%, 100% {
+    border-radius: 44% 56% 48% 52% / 45% 42% 58% 55%;
+    transform: translateY(0) rotate(0deg);
+  }
+  50% {
+    border-radius: 56% 44% 52% 48% / 55% 58% 42% 45%;
+    transform: translateY(-6px) rotate(180deg);
+  }
+}
+
+.lava-wave-core {
+  background: radial-gradient(circle at 35% 35%, #ff8c00, #ff007f 55%, #5b002c 100%);
+  animation: lavaWave 2.2s ease-in-out infinite;
+}
+
+.whiteout-flash {
+  background-color: #ffffff !important;
+  transition: background-color 0.55s ease;
+}
+
+/* Ending Credits Scroll (18s cinematic roll) */
+@keyframes creditsRoll {
+  0% {
+    transform: translateY(100vh);
+  }
+  100% {
+    transform: translateY(-115%);
+  }
+}
+
+.credits-roll-anim {
+  animation: creditsRoll 18s linear forwards;
+  will-change: transform;
+}
