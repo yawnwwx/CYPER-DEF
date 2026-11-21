@@ -138,7 +138,7 @@ export function initCyberDef(root: HTMLElement): void {
       </div>
 
       <!-- GLOBAL SETTINGS MODAL (Shared across Main Menu & In-Game via z-10000) -->
-      <div id="settings-modal" class="hidden fixed inset-0 z-[10000] bg-black/70 backdrop-blur-md items-center justify-center p-4">
+      <div id="settings-modal" class="hidden fixed inset-0 z-[10000] bg-black/80 items-center justify-center p-4">
         <div class="w-full max-w-md rounded-lg border border-[#00ff41]/55 bg-[#0b0f17]/95 p-6 flex flex-col gap-5 shadow-[0_0_40px_rgba(0,255,65,0.22)]">
           <div class="flex items-center justify-between border-b border-white/10 pb-3">
             <div>
@@ -395,11 +395,11 @@ export function initCyberDef(root: HTMLElement): void {
 
         <!-- Top Controls Hint -->
         <div class="absolute top-4 left-4 right-4 z-20 flex items-center justify-between pointer-events-none">
-          <div class="px-4 py-2 rounded-md bg-slate-900/75 text-white text-xs shadow-lg border border-white/15">
+          <div class="px-4 py-2 rounded-md bg-[rgba(15,20,25,0.85)] text-white text-xs shadow-lg border border-white/15">
             <span class="text-[#00ff41] font-bold mr-2">EXPLORATION</span>
             <span>WASD 이동 · 화면 클릭/드래그 회전 · 사물 근처에서 [E] 상호작용</span>
           </div>
-          <div id="room-objective-hud" class="px-4 py-2 rounded-md bg-slate-900/75 text-[#00ff41] text-xs font-bold border border-[#00ff41]/35 shadow-lg">
+          <div id="room-objective-hud" class="px-4 py-2 rounded-md bg-[rgba(15,20,25,0.85)] text-[#00ff41] text-xs font-bold border border-[#00ff41]/35 shadow-lg">
             목표: 책상 위 컴퓨터에 다가가 전원을 켜세요
           </div>
         </div>
@@ -410,10 +410,10 @@ export function initCyberDef(root: HTMLElement): void {
         </div>
 
         <!-- Bottom Proximity Interact Tooltip -->
-        <div id="room-interact-prompt" class="hidden fixed bottom-28 left-1/2 -translate-x-1/2 z-20 px-5 py-2.5 rounded-md bg-slate-950/90 border border-[#00ff41] text-sm font-bold text-[#00ff41] pointer-events-none shadow-lg"></div>
+        <div id="room-interact-prompt" class="hidden fixed bottom-28 left-1/2 -translate-x-1/2 z-20 px-5 py-2.5 rounded-md bg-[rgba(15,20,25,0.9)] border border-[#00ff41] text-sm font-bold text-[#00ff41] pointer-events-none shadow-lg"></div>
 
         <!-- Room Bottom Dialogue Box -->
-        <div id="room-dialogue" class="hidden fixed bottom-7 left-1/2 -translate-x-1/2 z-30 w-[92vw] max-w-2xl rounded-lg bg-slate-950/92 border-2 border-[#00ff41]/80 px-6 py-4 shadow-2xl pointer-events-none">
+        <div id="room-dialogue" class="hidden fixed bottom-7 left-1/2 -translate-x-1/2 z-30 w-[92vw] max-w-2xl rounded-lg bg-[rgba(15,20,25,0.92)] border-2 border-[#00ff41]/80 px-6 py-4 shadow-2xl pointer-events-none">
           <div class="text-xs font-bold text-[#00ff41] mb-1">주인공</div>
           <div id="room-dialogue-text" class="text-sm sm:text-base font-medium text-white leading-relaxed"></div>
         </div>
@@ -1381,12 +1381,12 @@ export function initCyberDef(root: HTMLElement): void {
     myRankKey = null;
     stopAndResetIngameBgm();
     clearOsTimers();
+    switchScene('room');
     ensureRoom3D();
     roomObjectiveHud.textContent = '목표: 책상 위 컴퓨터에 다가가 전원을 켜세요';
     room3d!.resetOpeningAtBed();
     room3d!.mode = 'explore';
     room3d!.start();
-    switchScene('room');
     showRoomDialogue('아, 웹 페이지 과제해야 하는데... 얼른 컴퓨터부터 켜자.', 4200);
   };
 
@@ -1395,6 +1395,7 @@ export function initCyberDef(root: HTMLElement): void {
     clearOsTimers();
     osSequenceStarted = false;
     stageEngine?.stop();
+    switchScene('room');
     ensureRoom3D();
     roomObjectiveHud.textContent = isSystemRestored
       ? '목표: 컴퓨터로 돌아가 브라우저에서 웹 과제를 제출하세요'
@@ -1404,7 +1405,6 @@ export function initCyberDef(root: HTMLElement): void {
     room3d!.setComputerPower(true);
     room3d!.setRoomLights(true);
     room3d!.returnFromMonitor();
-    switchScene('room');
   });
 
   // ---------------------------------------------------------------------------
