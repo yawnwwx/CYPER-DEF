@@ -400,7 +400,7 @@ export function initCyberDef(root: HTMLElement): void {
             <span>WASD 이동 · 화면 클릭/드래그 회전 · 사물 근처에서 [E] 상호작용</span>
           </div>
           <div id="room-objective-hud" class="px-4 py-2 rounded-md bg-[rgba(15,20,25,0.85)] text-[#00ff41] text-xs font-bold border border-[#00ff41]/35 shadow-lg">
-            목표: 책상 위 컴퓨터에 다가가 전원을 켜세요
+            목표: 책상 위 컴퓨터를 켜서 AI아트코딩과윤리 과제를 진행하세요
           </div>
         </div>
 
@@ -420,7 +420,7 @@ export function initCyberDef(root: HTMLElement): void {
           </div>
           <div class="flex flex-col">
             <span id="room-interact-label" class="text-sm font-bold text-[#e6edf3] whitespace-nowrap">꾹 눌러서 컴퓨터 사용하기</span>
-            <span class="text-[10px] font-code text-[#00ff41]/80 tracking-wider">HOLD [E] · 2.0s</span>
+            <span class="text-[10px] font-code text-[#00ff41]/80 tracking-wider">HOLD [E] · 1.0s</span>
           </div>
         </div>
 
@@ -497,7 +497,7 @@ export function initCyberDef(root: HTMLElement): void {
           </button>
           <button data-app="folder" class="os-icon flex flex-col items-center gap-1.5 p-2.5 rounded-lg hover:bg-white/15 active:scale-95 transition cursor-pointer text-white">
             ${SVG_FOLDER}
-            <span class="text-xs font-medium drop-shadow text-center">웹과제_폴더</span>
+            <span class="text-xs font-medium drop-shadow text-center">AI아트코딩과윤리_과제</span>
           </button>
         </div>
 
@@ -519,7 +519,7 @@ export function initCyberDef(root: HTMLElement): void {
               <span class="w-3 h-3 rounded-full bg-amber-400"></span>
               <span class="w-3 h-3 rounded-full bg-emerald-400"></span>
               <span id="os-browser-title" class="ml-3 px-3 py-1 rounded-t-md bg-white text-xs font-semibold text-slate-700 border border-b-0 border-slate-300">
-                대학교 LMS - 웹 프로그래밍 과제 제출
+                대학교 LMS - AI아트코딩과윤리 과제 제출
               </span>
             </div>
             <button id="btn-close-browser" type="button" class="text-xs font-bold text-slate-500 hover:text-slate-900 px-2 py-1 rounded hover:bg-slate-300/60 cursor-pointer">✕</button>
@@ -528,7 +528,7 @@ export function initCyberDef(root: HTMLElement): void {
           <div class="bg-slate-100 px-4 py-2 border-b border-slate-200 flex items-center gap-2 text-xs text-slate-600">
             <span class="px-2 py-0.5 rounded bg-emerald-100 text-emerald-700 font-bold">🔒 HTTPS</span>
             <div class="flex-1 bg-white border border-slate-300 rounded-full px-3.5 py-1 font-code text-[11px] text-slate-700 truncate">
-              https://lms.cyber-university.ac.kr/courses/web-programming/assignment/final
+              https://lms.cyber-university.ac.kr/courses/ai-art-coding-ethics/assignment/final
             </div>
           </div>
           <!-- University LMS Content -->
@@ -536,7 +536,7 @@ export function initCyberDef(root: HTMLElement): void {
             <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-4">
               <div>
                 <div class="text-xs font-bold text-blue-600 tracking-wide">UNIVERSITY LMS · 온라인 강의실</div>
-                <h3 class="text-xl font-black text-slate-900 mt-0.5">웹 프로그래밍 과제 제출 페이지</h3>
+                <h3 class="text-xl font-black text-slate-900 mt-0.5">AI아트코딩과윤리 과제 제출 페이지</h3>
               </div>
               <span id="lms-status-badge" class="px-3 py-1 rounded-full bg-amber-100 text-amber-800 text-xs font-bold">
                 미제출 · 마감 임박
@@ -546,11 +546,11 @@ export function initCyberDef(root: HTMLElement): void {
             <div class="rounded-lg border border-slate-200 bg-white p-5 space-y-4 shadow-xs">
               <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 text-sm border-b border-slate-100 pb-3">
                 <div class="text-slate-500 font-semibold">과제명</div>
-                <div class="sm:col-span-2 font-bold text-slate-900">최종 웹 프로젝트 제출</div>
+                <div class="sm:col-span-2 font-bold text-slate-900">AI아트코딩과윤리 최종 프로젝트 제출</div>
               </div>
               <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 text-sm border-b border-slate-100 pb-3">
                 <div class="text-slate-500 font-semibold">교과목</div>
-                <div class="sm:col-span-2 text-slate-700">AI 아트코딩과 윤리 · 웹 프로그래밍 실습</div>
+                <div class="sm:col-span-2 text-slate-700">AI아트코딩과윤리</div>
               </div>
               <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 text-sm items-center">
                 <div class="text-slate-500 font-semibold">첨부파일</div>
@@ -602,7 +602,7 @@ export function initCyberDef(root: HTMLElement): void {
             <div class="w-full max-w-sm rounded-xl bg-white p-6 text-center shadow-2xl border border-slate-200 space-y-3">
               <div class="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto text-2xl font-black">✓</div>
               <h4 class="text-lg font-black text-slate-900">제출 완료</h4>
-              <p class="text-sm font-semibold text-slate-700">과제가 성공적으로 제출되었습니다!</p>
+              <p class="text-sm font-semibold text-slate-700">AI아트코딩과윤리 과제가 성공적으로 제출되었습니다!</p>
               <div id="lms-submit-meta" class="text-xs font-code font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md px-3 py-1.5"></div>
             </div>
           </div>
@@ -628,7 +628,7 @@ export function initCyberDef(root: HTMLElement): void {
                 <rect x="13" y="13" width="9" height="9" rx="1"/>
               </svg>
             </div>
-            <span id="os-status-msg" class="text-xs text-slate-300">바탕화면 아이콘을 클릭하여 과제를 시작하세요</span>
+            <span id="os-status-msg" class="text-xs text-slate-300">바탕화면 아이콘을 클릭하여 AI아트코딩과윤리 과제를 시작하세요</span>
           </div>
           <div class="flex items-center gap-4">
             <span id="os-live-clock" class="text-xs font-code font-semibold text-white tabular-nums">00:00:00</span>
@@ -725,8 +725,8 @@ export function initCyberDef(root: HTMLElement): void {
           <div class="space-y-3 pt-4">
             <div class="text-xs font-code font-bold tracking-[0.25em] text-[#00ff41]">SPECIAL THANKS</div>
             <div class="text-base sm:text-lg font-bold text-white leading-relaxed">
-              AI 아트코딩과 윤리 과제 심사 및 피드백에 참여해 주신 모든 분들<br />
-              그리고 30단계의 방화벽을 뚫고 과제를 제출한 PLAYER
+              AI아트코딩과윤리 과제 심사 및 피드백에 참여해 주신 모든 분들<br />
+              그리고 30단계의 방화벽을 뚫고 AI아트코딩과윤리 과제를 제출한 PLAYER
             </div>
           </div>
 
@@ -752,7 +752,7 @@ export function initCyberDef(root: HTMLElement): void {
         <div id="ending-actions" class="opacity-0 pointer-events-none transition-opacity duration-1000 fixed inset-0 flex flex-col items-center justify-center gap-6 bg-black/92 px-6 text-center">
           <div class="text-xs font-code tracking-[0.35em] text-[#00ff41]">ALL SYSTEMS NORMAL</div>
           <h3 class="text-3xl sm:text-4xl font-black text-white tracking-wider">CYBER-DEF</h3>
-          <p class="text-sm text-slate-400">과제가 성공적으로 제출되었습니다.</p>
+          <p class="text-sm text-slate-400">AI아트코딩과윤리 과제가 성공적으로 제출되었습니다.</p>
           <div id="ending-clear-summary" class="hidden px-4 py-2 rounded-md border border-[#00ff41]/35 bg-[#00ff41]/8 font-code text-xs sm:text-sm font-bold text-[#00ff41] tracking-wider tabular-nums"></div>
           <div class="flex flex-wrap items-center justify-center gap-4 pt-1">
             <button id="btn-ending-rank" type="button" class="cyber-btn px-10 py-3.5 text-sm font-black tracking-[0.22em] cursor-pointer shadow-[0_0_24px_rgba(0,229,255,0.3)] border-[#00e5ff] text-[#00e5ff] hover:bg-[#00e5ff]/20">
@@ -1533,7 +1533,7 @@ export function initCyberDef(root: HTMLElement): void {
 
         if (target === 'door' || target === 'window') {
           audio.errorBuzz();
-          showRoomDialogue('지금은 나갈 때가 아니야. 컴퓨터를 켜서 과제를 먼저 끝내야 해.', 3200);
+          showRoomDialogue('지금은 나갈 때가 아니야. 컴퓨터를 켜서 AI아트코딩과윤리 과제를 먼저 끝내야 해.', 3200);
           return;
         }
 
@@ -1589,11 +1589,11 @@ export function initCyberDef(root: HTMLElement): void {
     clearOsTimers();
     switchScene('room');
     ensureRoom3D();
-    roomObjectiveHud.textContent = '목표: 책상 위 컴퓨터에 다가가 전원을 켜세요';
+    roomObjectiveHud.textContent = '목표: 책상 위 컴퓨터를 켜서 AI아트코딩과윤리 과제를 진행하세요';
     room3d!.resetOpeningAtBed();
     room3d!.mode = 'explore';
     room3d!.start();
-    showRoomDialogue('아, 웹 페이지 과제해야 하는데... 얼른 컴퓨터부터 켜자.', 4200);
+    showRoomDialogue('아, AI아트코딩과윤리 과제해야 하는데... 얼른 컴퓨터부터 켜자.', 4200);
   };
 
   fixedReturnBtn.addEventListener('click', () => {
@@ -1604,10 +1604,10 @@ export function initCyberDef(root: HTMLElement): void {
     switchScene('room');
     ensureRoom3D();
     roomObjectiveHud.textContent = isSystemRestored
-      ? '목표: 컴퓨터로 돌아가 브라우저에서 웹 과제를 제출하세요'
+      ? '목표: 컴퓨터로 돌아가 브라우저에서 AI아트코딩과윤리 과제를 제출하세요'
       : sessionHacked
       ? '목표: 다시 컴퓨터 근처에서 [E]를 눌러 보안 단계를 이어가세요'
-      : '목표: 책상 위 컴퓨터에 다가가 [E]를 눌러 작업을 이어가세요';
+      : '목표: 책상 위 컴퓨터에 다가가 [E]를 눌러 AI아트코딩과윤리 과제를 이어가세요';
     room3d!.setComputerPower(true);
     room3d!.setRoomLights(true);
     room3d!.returnFromMonitor();
@@ -1661,7 +1661,7 @@ export function initCyberDef(root: HTMLElement): void {
           osFlashLayer.classList.add('os-red-flash');
           osNotepad.classList.remove('hidden');
           const hackMsg =
-            '당신은 해킹당했다. 이 게임을 모두 클리어하지 않으면 해킹을 풀어주지 않겠다.';
+            '당신은 해킹당했다. 이 게임을 모두 클리어하지 않으면 AI아트코딩과윤리 과제도, 해킹도 풀어주지 않겠다.';
           typeOsText(osNotepadText, hackMsg, 55, () => {
             sessionHacked = true;
             progress.hasBeenHacked = true;
@@ -1715,7 +1715,7 @@ export function initCyberDef(root: HTMLElement): void {
     osFadeCurtain.classList.add('opacity-0');
     osDialogueText.textContent = '';
     osNotepadText.textContent = '';
-    osStatusMsg.textContent = '바탕화면 아이콘을 클릭하여 과제를 시작하세요';
+    osStatusMsg.textContent = '바탕화면 아이콘을 클릭하여 AI아트코딩과윤리 과제를 시작하세요';
     switchScene('os');
   };
 
@@ -1743,14 +1743,14 @@ export function initCyberDef(root: HTMLElement): void {
     lmsStatusBadge.className = 'px-3 py-1 rounded-full bg-amber-100 text-amber-800 text-xs font-bold';
     osFadeCurtain.classList.remove('opacity-100');
     osFadeCurtain.classList.add('opacity-0');
-    osStatusMsg.textContent = '시스템 권한 복구 완료 · Chrome 또는 Edge를 열어 과제를 제출하세요';
+    osStatusMsg.textContent = '시스템 권한 복구 완료 · Chrome 또는 Edge를 열어 AI아트코딩과윤리 과제를 제출하세요';
     switchScene('os');
 
     if (showReliefDialogue) {
       osDialogue.classList.remove('hidden');
       typeOsText(
         osDialogueText,
-        '휴... 드디어 해킹이 풀렸어! 이제 얼른 인터넷에 들어가서 과제부터 제출하자.',
+        '휴... 드디어 해킹이 풀렸어! 이제 얼른 인터넷에 들어가서 AI아트코딩과윤리 과제부터 제출하자.',
         52,
         () => {
           osTimers.push(
@@ -1771,11 +1771,11 @@ export function initCyberDef(root: HTMLElement): void {
     audio.hitSuccess();
     captureStage30ClearTime();
     osDialogue.classList.add('hidden');
-    osBrowserTitle.textContent = `${browserName} — 대학교 LMS · 웹 프로그래밍 과제 제출`;
+    osBrowserTitle.textContent = `${browserName} — 대학교 LMS · AI아트코딩과윤리 과제 제출`;
     lmsClearTimeDisplay.textContent = formatPlayTime(clearElapsedMs);
     osBrowserWindow.classList.remove('hidden');
     osBrowserWindow.classList.add('flex');
-    osStatusMsg.textContent = `${browserName} 실행 중 · 최종 웹 프로젝트 과제 제출 페이지`;
+    osStatusMsg.textContent = `${browserName} 실행 중 · AI아트코딩과윤리 과제 제출 페이지`;
     if (!assignmentSubmitted) {
       window.setTimeout(() => lmsPlayerNameInput.focus(), 60);
     }
@@ -1856,7 +1856,7 @@ export function initCyberDef(root: HTMLElement): void {
           openRestoredBrowser('Microsoft Edge');
         } else {
           audio.keyClick();
-          osStatusMsg.textContent = '먼저 Chrome 또는 Microsoft Edge 브라우저를 열어 과제를 제출하세요.';
+          osStatusMsg.textContent = '먼저 Chrome 또는 Microsoft Edge 브라우저를 열어 AI아트코딩과윤리 과제를 제출하세요.';
         }
         return;
       }

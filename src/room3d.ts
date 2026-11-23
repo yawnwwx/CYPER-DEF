@@ -9,7 +9,7 @@ interface RoomCallbacks {
   onHoldProgress?: (progress: number) => void;
 }
 
-const HOLD_DURATION_MS = 2000;
+const HOLD_DURATION_MS = 1000;
 
 interface InteractPoint {
   id: RoomInteractTarget;
@@ -1238,7 +1238,7 @@ export class DeveloperRoom3D {
   private onKeyDown = (e: KeyboardEvent): void => {
     if (!this.running || (this.mode !== 'explore' && this.mode !== 'ending_poweroff')) return;
     this.keys[e.code] = true;
-    // 2-second E-key Hold Interaction (ignore key-repeat, never trigger immediately on press)
+    // 1-second E-key Hold Interaction (ignore key-repeat, never trigger immediately on press)
     if (e.code === 'KeyE') {
       if (e.repeat) return;
       if (this.lastTarget && !this.isHoldingE) {
