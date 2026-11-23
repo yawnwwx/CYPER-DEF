@@ -636,27 +636,137 @@ export function initCyberDef(root: HTMLElement): void {
         </div>
       </section>
 
-      <!-- 3. STAGE SELECT (PYTHON ONLY, NO CHEATS) -->
-      <section id="scene-stage-select" class="cyber-scene flex-col bg-[#0a0b0e] overflow-y-auto">
-        <header class="px-6 py-4 pr-44 border-b border-white/10 bg-[#10131a] flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <div class="text-xs text-[#00ff41] font-bold tracking-widest">PYTHON DEFENSE PROTOCOL</div>
-            <h2 class="text-xl font-black text-white">파이썬 보안 스테이지 선택 (1 - 30)</h2>
+      <!-- 3. STAGE SELECT (6-STAGE PAGINATED CYBERPUNK HUD, PYTHON ONLY, NO CHEATS) -->
+      <section id="scene-stage-select" class="cyber-scene flex-col stage-select-bg overflow-y-auto relative">
+        <!-- Decorative Top & Bottom Cyber Circuit Lines (Lightweight SVG, Zero Blur) -->
+        <svg class="pointer-events-none fixed top-0 left-0 w-full h-24 z-0 opacity-85" viewBox="0 0 1440 96" preserveAspectRatio="none" aria-hidden="true">
+          <polyline points="0,78 395,78 430,66 575,66 635,28 1015,28 1045,0" fill="none" stroke="#00ff41" stroke-opacity="0.45" stroke-width="1.5" vector-effect="non-scaling-stroke" />
+          <polyline points="0,84 360,84 378,78" fill="none" stroke="#00ff41" stroke-opacity="0.22" stroke-width="1" vector-effect="non-scaling-stroke" />
+        </svg>
+        <svg class="pointer-events-none fixed bottom-0 left-0 w-full h-20 z-0 opacity-80" viewBox="0 0 1440 80" preserveAspectRatio="none" aria-hidden="true">
+          <polyline points="0,56 175,56 210,70 430,70 452,76 1045,76 1068,60 1355,60 1392,26 1440,26" fill="none" stroke="#00ff41" stroke-opacity="0.48" stroke-width="1.6" vector-effect="non-scaling-stroke" />
+          <polyline points="0,42 190,42 224,62 435,62" fill="none" stroke="#00ff41" stroke-opacity="0.2" stroke-width="1" vector-effect="non-scaling-stroke" />
+        </svg>
+
+        <!-- Top HUD Bar -->
+        <header class="relative z-10 w-full max-w-[1380px] mx-auto px-6 sm:px-10 pt-5 pb-3 flex flex-wrap items-center justify-between gap-4 shrink-0">
+          <div class="flex flex-col">
+            <div class="flex items-center gap-3">
+              <span class="text-xs font-code font-bold tracking-[0.26em] text-[#00ff41]">CYBER-DEF</span>
+              <span class="inline-flex items-center gap-1" aria-hidden="true">
+                <span class="w-2 h-1.5 bg-[#00ff41]/85 -skew-x-24 inline-block"></span>
+                <span class="w-2 h-1.5 bg-[#00ff41]/70 -skew-x-24 inline-block"></span>
+                <span class="w-2 h-1.5 bg-[#00ff41]/55 -skew-x-24 inline-block"></span>
+                <span class="w-2 h-1.5 bg-[#00ff41]/40 -skew-x-24 inline-block"></span>
+                <span class="w-2 h-1.5 bg-[#00ff41]/25 -skew-x-24 inline-block"></span>
+              </span>
+            </div>
+            <h2 class="text-2xl sm:text-3xl font-black text-white tracking-[0.16em] leading-tight mt-0.5">STAGE SELECT</h2>
           </div>
-          <div id="stage-summary" class="text-xs text-slate-300 font-medium tabular-nums"></div>
+
+          <!-- Top-Right Progress Badge & Home (Return to Room) Button -->
+          <div class="flex items-center gap-3 shrink-0">
+            <div class="stage-chamfer-badge relative px-4 py-2.5 flex items-center gap-3">
+              <svg class="stage-card-border-svg" viewBox="0 0 220 44" preserveAspectRatio="none" aria-hidden="true">
+                <polygon points="11,1 209,1 219,11 219,33 209,43 11,43 1,33 1,11" fill="none" stroke="#00ff41" stroke-opacity="0.65" stroke-width="1.4" vector-effect="non-scaling-stroke" />
+              </svg>
+              <!-- Python Emblem SVG -->
+              <svg viewBox="0 0 24 24" class="w-5 h-5 shrink-0" aria-hidden="true">
+                <path fill="#3776ab" d="M11.9 2C7.4 2 7.7 3.9 7.7 3.9l.01 2h4.3v.6H6s-2.9-.3-2.9 4.2 2.5 4.3 2.5 4.3h1.5v-2.1s-.08-2.5 2.5-2.5h4.2s2.4.04 2.4-2.3V4.3S16.5 2 11.9 2zm-2.3 1.4a.8.8 0 1 1 0 1.6.8.8 0 0 1 0-1.6z"/>
+                <path fill="#ffd43b" d="M12.1 22c4.5 0 4.2-1.9 4.2-1.9l-.01-2H12v-.6h6s2.9.3 2.9-4.2-2.5-4.3-2.5-4.3h-1.5v2.1s.08 2.5-2.5 2.5h-4.2s-2.4-.04-2.4 2.3v3.8S7.5 22 12.1 22zm2.3-1.4a.8.8 0 1 1 0-1.6.8.8 0 0 1 0 1.6z"/>
+              </svg>
+              <span id="stage-summary" class="font-code text-xs sm:text-sm font-bold text-white tracking-wider tabular-nums whitespace-nowrap">
+                Python · 0 / 30
+              </span>
+            </div>
+
+            <button
+              id="btn-stage-home"
+              type="button"
+              title="방으로 돌아가기"
+              aria-label="방으로 돌아가기"
+              class="stage-home-btn"
+            >
+              <svg class="stage-card-border-svg" viewBox="0 0 46 46" preserveAspectRatio="none" aria-hidden="true">
+                <polygon points="11,1 35,1 45,11 45,35 35,45 11,45 1,35 1,11" fill="none" stroke="#00ff41" stroke-opacity="0.72" stroke-width="1.5" vector-effect="non-scaling-stroke" />
+              </svg>
+              <svg viewBox="0 0 24 24" class="w-5 h-5 relative z-10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 10.5L12 3l9 7.5" />
+                <path d="M5.5 9.5V20a1 1 0 0 0 1 1H10v-5.5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1V21h3.5a1 1 0 0 0 1-1V9.5" />
+              </svg>
+            </button>
+          </div>
         </header>
 
-        <main class="flex-1 p-6 max-w-6xl w-full mx-auto flex flex-col gap-5">
-          <div class="flex items-center justify-between text-xs text-slate-400">
-            <span>순차적으로 30단계를 모두 돌파하면 해커의 시스템을 셧다운할 수 있습니다.</span>
-            <div class="flex items-center gap-4">
-              <span class="text-[#00ff41]">■ 현재 도전 단계</span>
-              <span class="text-[#00e5ff]">■ 클리어 완료</span>
-              <span class="text-slate-500">🔒 잠긴 단계</span>
+        <!-- Subtitle & Main 3x2 Paginated Stage Grid -->
+        <main class="relative z-10 flex-1 w-full max-w-[1380px] mx-auto px-5 sm:px-10 pb-8 pt-2 flex flex-col justify-between gap-5">
+          <!-- Subtitle Line -->
+          <div class="flex flex-wrap items-center justify-between gap-3 px-2 sm:px-14">
+            <div class="flex items-center gap-3">
+              <span class="w-1 h-4 bg-[#00ff41] inline-block shrink-0" aria-hidden="true"></span>
+              <p class="text-xs sm:text-sm font-code text-slate-300/90 tracking-wide">
+                Select a stage to begin the challenge.
+              </p>
             </div>
+            <span id="stage-page-range-label" class="text-xs font-code text-[#00ff41]/80 tracking-wider tabular-nums">
+              STAGE 01 - 06
+            </span>
           </div>
 
-          <div id="stage-grid" class="grid grid-cols-2 sm:grid-cols-5 lg:grid-cols-6 gap-3"></div>
+          <!-- Center Row: Left Hex Arrow + 3x2 Stage Cards + Right Hex Arrow -->
+          <div class="flex items-center justify-center gap-3 sm:gap-6 my-auto">
+            <button
+              id="btn-stage-prev"
+              type="button"
+              aria-label="이전 페이지"
+              class="stage-hex-arrow"
+            >
+              <svg class="stage-card-border-svg" viewBox="0 0 54 62" preserveAspectRatio="none" aria-hidden="true">
+                <polygon points="13,1 41,1 53,15 53,47 41,61 13,61 1,47 1,15" fill="none" stroke="currentColor" stroke-opacity="0.72" stroke-width="1.6" vector-effect="non-scaling-stroke" />
+              </svg>
+              <svg viewBox="0 0 24 24" class="w-7 h-7 relative z-10" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="15 18 9 12 15 6" />
+              </svg>
+            </button>
+
+            <div id="stage-grid" class="flex-1 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 max-w-[1120px]"></div>
+
+            <button
+              id="btn-stage-next"
+              type="button"
+              aria-label="다음 페이지"
+              class="stage-hex-arrow"
+            >
+              <svg class="stage-card-border-svg" viewBox="0 0 54 62" preserveAspectRatio="none" aria-hidden="true">
+                <polygon points="13,1 41,1 53,15 53,47 41,61 13,61 1,47 1,15" fill="none" stroke="currentColor" stroke-opacity="0.72" stroke-width="1.6" vector-effect="non-scaling-stroke" />
+              </svg>
+              <svg viewBox="0 0 24 24" class="w-7 h-7 relative z-10" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="9 18 15 12 9 6" />
+              </svg>
+            </button>
+          </div>
+
+          <!-- Bottom Pagination Bar (5 Indicator Dots + 1 / 5 Counter) -->
+          <div class="relative flex flex-col items-center gap-3 pb-2">
+            <!-- Locked Page Toast Notification -->
+            <div
+              id="stage-page-toast"
+              role="status"
+              aria-live="polite"
+              class="stage-page-toast pointer-events-none opacity-0 translate-y-2 px-5 py-2.5 rounded-md bg-[rgba(15,20,25,0.95)] border border-[#ff007f]/75 text-xs sm:text-sm font-bold text-[#ff8ac4] shadow-[0_0_24px_rgba(255,0,127,0.3)]"
+            >
+              현재 페이지의 6단계를 모두 클리어해야 다음 페이지가 해금됩니다.
+            </div>
+
+            <div class="flex items-center justify-center gap-5 w-full max-w-md">
+              <div class="h-px flex-1 bg-gradient-to-r from-transparent to-[#00ff41]/45" aria-hidden="true"></div>
+              <div id="stage-page-dots" class="flex items-center gap-3"></div>
+              <span id="stage-page-counter" class="font-code text-xs sm:text-sm font-bold text-slate-200 tracking-widest tabular-nums ml-1 whitespace-nowrap">
+                1 / 5
+              </span>
+              <div class="h-px flex-1 bg-gradient-to-l from-transparent to-[#00ff41]/45" aria-hidden="true"></div>
+            </div>
+          </div>
         </main>
       </section>
 
@@ -1054,7 +1164,7 @@ export function initCyberDef(root: HTMLElement): void {
       resetPauseState();
     }
 
-    if (next === 'os' || next === 'stage-select' || next === 'game') {
+    if (next === 'os' || next === 'game') {
       fixedReturnBtn.classList.add('visible');
     } else {
       fixedReturnBtn.classList.remove('visible');
@@ -1596,7 +1706,7 @@ export function initCyberDef(root: HTMLElement): void {
     showRoomDialogue('아, AI아트코딩과윤리 과제해야 하는데... 얼른 컴퓨터부터 켜자.', 4200);
   };
 
-  fixedReturnBtn.addEventListener('click', () => {
+  const returnToRoomFrom2D = () => {
     audio.keyClick();
     clearOsTimers();
     osSequenceStarted = false;
@@ -1611,7 +1721,9 @@ export function initCyberDef(root: HTMLElement): void {
     room3d!.setComputerPower(true);
     room3d!.setRoomLights(true);
     room3d!.returnFromMonitor();
-  });
+  };
+
+  fixedReturnBtn.addEventListener('click', returnToRoomFrom2D);
 
   // ---------------------------------------------------------------------------
   // 2. FAKE OS & HACKING SIMULATION
@@ -1869,78 +1981,382 @@ export function initCyberDef(root: HTMLElement): void {
   });
 
   // ---------------------------------------------------------------------------
-  // 3. STAGE SELECT (PYTHON ONLY, NO CHEAT BUTTONS)
+  // 3. STAGE SELECT (6-STAGE PAGINATION, CHAMFERED CARDS & SVG ICONS)
   // ---------------------------------------------------------------------------
   const stageGrid = root.querySelector('#stage-grid') as HTMLElement;
   const stageSummary = root.querySelector('#stage-summary') as HTMLElement;
+  const stagePageRangeLabel = root.querySelector('#stage-page-range-label') as HTMLElement;
+  const stagePageDots = root.querySelector('#stage-page-dots') as HTMLElement;
+  const stagePageCounter = root.querySelector('#stage-page-counter') as HTMLElement;
+  const stagePageToast = root.querySelector('#stage-page-toast') as HTMLElement;
+  const btnStagePrev = root.querySelector('#btn-stage-prev') as HTMLButtonElement;
+  const btnStageNext = root.querySelector('#btn-stage-next') as HTMLButtonElement;
+  const btnStageHome = root.querySelector('#btn-stage-home') as HTMLButtonElement;
 
-  const renderStageSelect = () => {
+  const STAGES_PER_PAGE = 6;
+  const TOTAL_STAGE_PAGES = Math.ceil(STAGES.length / STAGES_PER_PAGE); // 5 pages
+  let currentStagePage = 1;
+  let stageToastTimer = 0;
+
+  btnStageHome.addEventListener('click', returnToRoomFrom2D);
+
+  const showLockedPageToast = (triggerEl?: HTMLElement | null) => {
+    audio.errorBuzz();
+    if (triggerEl) {
+      triggerEl.classList.remove('shake-error');
+      void triggerEl.offsetWidth;
+      triggerEl.classList.add('shake-error');
+    }
+    stagePageToast.classList.remove('opacity-0', 'translate-y-2');
+    stagePageToast.classList.add('opacity-100', 'translate-y-0');
+    window.clearTimeout(stageToastTimer);
+    stageToastTimer = window.setTimeout(() => {
+      stagePageToast.classList.add('opacity-0', 'translate-y-2');
+      stagePageToast.classList.remove('opacity-100', 'translate-y-0');
+    }, 2400);
+  };
+
+  const isStagePageUnlocked = (page: number): boolean => {
+    if (page <= 1) return true;
+    const requiredClearedUpTo = (page - 1) * STAGES_PER_PAGE;
+    if (progress.unlocked <= requiredClearedUpTo) return false;
+    const clearedSet = new Set(progress.cleared);
+    for (let s = 1; s <= requiredClearedUpTo; s++) {
+      if (!clearedSet.has(s)) return false;
+    }
+    return true;
+  };
+
+  const getStageIconSvg = (stageId: number, category: string): string => {
+    // Stage-specific authentic neon vector icons matched to actual gameplay type
+    if (category === 'boss') {
+      // Skull / Cyber Boss Hazard Emblem (Stage 10, 20, 30)
+      return `
+        <svg viewBox="0 0 64 64" class="w-14 h-14 sm:w-16 sm:h-16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M32 8C19.5 8 11 16.8 11 28.5c0 6.8 3.2 12.2 8.2 15.2V51a3 3 0 0 0 3 3h19.6a3 3 0 0 0 3-3v-7.3c5-3 8.2-8.4 8.2-15.2C53 16.8 44.5 8 32 8z" fill="currentColor" fill-opacity="0.12"/>
+          <circle cx="23.5" cy="29.5" r="4.2" fill="currentColor"/>
+          <circle cx="40.5" cy="29.5" r="4.2" fill="currentColor"/>
+          <path d="M32 36l-2.6 4.5h5.2L32 36z" fill="currentColor"/>
+          <line x1="25" y1="47" x2="25" y2="54"/>
+          <line x1="32" y1="47" x2="32" y2="54"/>
+          <line x1="39" y1="47" x2="39" y2="54"/>
+        </svg>
+      `;
+    }
+
+    if (category === 'code') {
+      // </> Code Brackets (Stage 5, 15, 25)
+      return `
+        <svg viewBox="0 0 64 64" class="w-14 h-14 sm:w-16 sm:h-16" fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <polyline points="22 18 8 32 22 46"/>
+          <polyline points="42 18 56 32 42 46"/>
+          <line x1="36" y1="14" x2="28" y2="50"/>
+        </svg>
+      `;
+    }
+
+    if (category === 'mash') {
+      if (stageId === 4) {
+        // DDoS Traffic Cloud with Up/Down Arrows (Stage 4)
+        return `
+          <svg viewBox="0 0 64 64" class="w-14 h-14 sm:w-16 sm:h-16" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M18 46h29a11 11 0 0 0 2-21.8A15 15 0 0 0 20.5 20 12 12 0 0 0 18 46z" fill="currentColor" fill-opacity="0.12"/>
+            <path d="M27 42V27m0 0l-4.5 4.5M27 27l4.5 4.5" stroke-width="2.8"/>
+            <path d="M39 27v15m0 0l-4.5-4.5M39 42l4.5-4.5" stroke-width="2.8"/>
+          </svg>
+        `;
+      }
+      // High-Voltage Lightning Bolt (Stage 14, 22)
+      return `
+        <svg viewBox="0 0 64 64" class="w-14 h-14 sm:w-16 sm:h-16" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <polygon points="36 6 14 35 30 35 26 58 50 28 34 28 36 6" fill="currentColor" fill-opacity="0.18"/>
+        </svg>
+      `;
+    }
+
+    if (category === 'rhythm') {
+      if (stageId === 17 || stageId === 27) {
+        // Waveform / Pulse Signal (Stage 17, 27)
+        return `
+          <svg viewBox="0 0 64 64" class="w-14 h-14 sm:w-16 sm:h-16" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="7" y="14" width="50" height="36" rx="6" fill="currentColor" fill-opacity="0.08" stroke-opacity="0.55"/>
+            <polyline points="12 34 20 34 25 21 31 44 37 25 42 34 52 34"/>
+          </svg>
+        `;
+      }
+      // Signal Antenna Tower (Stage 3, 13, 23)
+      return `
+        <svg viewBox="0 0 64 64" class="w-14 h-14 sm:w-16 sm:h-16" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="32" cy="24" r="3.5" fill="currentColor"/>
+          <path d="M23.5 16.5a11.5 11.5 0 0 0 0 15"/>
+          <path d="M40.5 16.5a11.5 11.5 0 0 1 0 15"/>
+          <path d="M17 11a20 20 0 0 0 0 26"/>
+          <path d="M47 11a20 20 0 0 1 0 26"/>
+          <path d="M32 28L20 55h24L32 28z" fill="currentColor" fill-opacity="0.14"/>
+          <line x1="25" y1="43" x2="39" y2="43"/>
+        </svg>
+      `;
+    }
+
+    if (category === 'click') {
+      if (stageId === 2 || stageId === 8) {
+        // Stacked Database Cylinder (Stage 2, 8)
+        return `
+          <svg viewBox="0 0 64 64" class="w-14 h-14 sm:w-16 sm:h-16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <ellipse cx="32" cy="15" rx="19" ry="6.5" fill="currentColor" fill-opacity="0.18"/>
+            <path d="M13 15v11c0 3.6 8.5 6.5 19 6.5s19-2.9 19-6.5V15"/>
+            <path d="M13 26v11c0 3.6 8.5 6.5 19 6.5s19-2.9 19-6.5V26"/>
+            <path d="M13 37v11c0 3.6 8.5 6.5 19 6.5s19-2.9 19-6.5V37"/>
+            <circle cx="21" cy="24" r="1.5" fill="currentColor"/>
+            <circle cx="21" cy="35" r="1.5" fill="currentColor"/>
+            <circle cx="21" cy="46" r="1.5" fill="currentColor"/>
+          </svg>
+        `;
+      }
+      if (stageId === 7 || stageId === 24) {
+        // Crosshair Aim Target (Stage 7, 24)
+        return `
+          <svg viewBox="0 0 64 64" class="w-14 h-14 sm:w-16 sm:h-16" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="32" cy="32" r="19" fill="currentColor" fill-opacity="0.08"/>
+            <circle cx="32" cy="32" r="10"/>
+            <circle cx="32" cy="32" r="2.6" fill="currentColor"/>
+            <line x1="32" y1="6" x2="32" y2="16"/>
+            <line x1="32" y1="48" x2="32" y2="58"/>
+            <line x1="6" y1="32" x2="16" y2="32"/>
+            <line x1="48" y1="32" x2="58" y2="32"/>
+          </svg>
+        `;
+      }
+      // Cyber Magnifying Glass (Stage 11, 18, 19, 26)
+      return `
+        <svg viewBox="0 0 64 64" class="w-14 h-14 sm:w-16 sm:h-16" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="28" cy="27" r="15.5" fill="currentColor" fill-opacity="0.12"/>
+          <path d="M21 22a9 9 0 0 1 11-2" stroke-opacity="0.7"/>
+          <line x1="39.5" y1="38.5" x2="54" y2="53" stroke-width="4"/>
+        </svg>
+      `;
+    }
+
+    // Typing category: Terminal/Keyboard (Stage 9, 12, 21) or Defense Shield (Stage 1, 6, 16, 28, 29)
+    if (stageId === 9 || stageId === 12 || stageId === 21) {
+      return `
+        <svg viewBox="0 0 64 64" class="w-14 h-14 sm:w-16 sm:h-16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="8" y="13" width="48" height="38" rx="5" fill="currentColor" fill-opacity="0.1"/>
+          <line x1="8" y1="22" x2="56" y2="22" stroke-opacity="0.6"/>
+          <polyline points="17 31 24 37 17 43" stroke-width="2.8"/>
+          <line x1="29" y1="43" x2="45" y2="43" stroke-width="2.8"/>
+        </svg>
+      `;
+    }
+
+    // Cyber Defense Shield (Default Typing: Stage 1, 6, 16, 28, 29)
+    return `
+      <svg viewBox="0 0 64 64" class="w-14 h-14 sm:w-16 sm:h-16" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M32 7L12 15v15c0 13.5 8.5 22.8 20 27 11.5-4.2 20-13.5 20-27V15L32 7z" fill="currentColor" fill-opacity="0.12"/>
+        <path d="M32 7v50c11.5-4.2 20-13.5 20-27V15L32 7z" fill="currentColor" fill-opacity="0.22" stroke="none"/>
+        <line x1="32" y1="12" x2="32" y2="52" stroke-opacity="0.55"/>
+      </svg>
+    `;
+  };
+
+  const LOCK_ICON_SVG = `
+    <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <rect x="5" y="11" width="14" height="10" rx="2"/>
+      <path d="M8 11V7a4 4 0 0 1 8 0v4"/>
+    </svg>
+  `;
+
+  const renderStageSelect = (syncPageToUnlocked = true) => {
     const clearedSet = new Set(progress.cleared);
     const unlockedStage = progress.unlocked;
-    stageSummary.textContent = `언어: Python · 클리어: ${clearedSet.size} / 30 · 현재 도전: ${unlockedStage}단계`;
 
+    if (syncPageToUnlocked) {
+      currentStagePage = Math.min(TOTAL_STAGE_PAGES, Math.max(1, Math.ceil(unlockedStage / STAGES_PER_PAGE)));
+    } else {
+      currentStagePage = Math.min(TOTAL_STAGE_PAGES, Math.max(1, currentStagePage));
+    }
+
+    // Top-right progress badge reflects actual cleared count (never fake/unlocked count)
+    stageSummary.textContent = `Python · ${clearedSet.size} / 30`;
+
+    const startIdx = (currentStagePage - 1) * STAGES_PER_PAGE;
+    const endIdx = Math.min(STAGES.length, startIdx + STAGES_PER_PAGE);
+    const pageStages = STAGES.slice(startIdx, endIdx);
+
+    stagePageRangeLabel.textContent = `STAGE ${String(startIdx + 1).padStart(2, '0')} - ${String(endIdx).padStart(2, '0')}`;
+    stagePageCounter.textContent = `${currentStagePage} / ${TOTAL_STAGE_PAGES}`;
+
+    // Update Prev/Next Hexagonal Arrow States
+    if (currentStagePage <= 1) {
+      btnStagePrev.classList.add('stage-hex-disabled');
+      btnStagePrev.disabled = true;
+    } else {
+      btnStagePrev.classList.remove('stage-hex-disabled');
+      btnStagePrev.disabled = false;
+    }
+
+    const nextPage = currentStagePage + 1;
+    btnStageNext.classList.remove('stage-hex-disabled', 'stage-hex-locked');
+    if (currentStagePage >= TOTAL_STAGE_PAGES) {
+      btnStageNext.classList.add('stage-hex-disabled');
+      btnStageNext.disabled = true;
+    } else {
+      btnStageNext.disabled = false;
+      if (!isStagePageUnlocked(nextPage)) {
+        btnStageNext.classList.add('stage-hex-locked');
+      }
+    }
+
+    // Render 5 Page Indicator Dots
+    stagePageDots.innerHTML = '';
+    for (let p = 1; p <= TOTAL_STAGE_PAGES; p++) {
+      const dot = document.createElement('button');
+      dot.type = 'button';
+      dot.setAttribute('aria-label', `${p}페이지로 이동`);
+      const unlocked = isStagePageUnlocked(p);
+      dot.className = 'stage-page-dot';
+      if (p === currentStagePage) {
+        dot.classList.add('stage-page-dot-active');
+      } else if (!unlocked) {
+        dot.classList.add('stage-page-dot-locked');
+      }
+      dot.addEventListener('click', () => {
+        if (p === currentStagePage) return;
+        if (!isStagePageUnlocked(p)) {
+          showLockedPageToast(dot);
+          return;
+        }
+        audio.keyClick();
+        currentStagePage = p;
+        renderStageSelect(false);
+      });
+      stagePageDots.appendChild(dot);
+    }
+
+    // Render 3x2 (6) Chamfered Stage Cards
     stageGrid.innerHTML = '';
-    STAGES.forEach((st) => {
+    pageStages.forEach((st) => {
       const stageNum = st.id;
       const isCleared = clearedSet.has(stageNum);
       const isCurrent = !isCleared && stageNum === unlockedStage;
+      const isLocked = !isCleared && !isCurrent && stageNum > unlockedStage;
+      const numLabel = String(stageNum).padStart(2, '0');
+      const iconSvg = getStageIconSvg(stageNum, st.category);
 
-      const btn = document.createElement('button');
+      const borderStroke = isCurrent
+        ? '#00ff41'
+        : isCleared
+        ? '#00ff41'
+        : 'rgba(148, 163, 184, 0.32)';
+      const borderOpacity = isCurrent ? '1' : isCleared ? '0.68' : '0.45';
+      const borderWidth = isCurrent ? '2.4' : '1.5';
+      const cornerAccentColor = isLocked ? 'rgba(148,163,184,0.22)' : '#00ff41';
 
-      if (isCleared) {
-        // 1. 실제로 게임 목표를 달성해 클리어 판정을 받은 단계만 CLEAR 및 체크 표시
-        btn.className =
-          'p-3.5 rounded-md border text-left flex flex-col justify-between min-h-[94px] cursor-pointer transition-transform duration-150 bg-[#0c1a1c] border-[#00e5ff]/60 hover:border-[#00e5ff]';
-        btn.innerHTML = `
-          <div class="flex items-center justify-between w-full">
-            <span class="text-lg font-black tabular-nums font-code text-[#00e5ff]">${String(stageNum).padStart(2, '0')}</span>
-            <span class="text-[11px] font-bold text-[#00e5ff]">✓ CLEAR</span>
+      const statusHtml = isCleared
+        ? `<span class="inline-flex items-center gap-1.5 font-code text-xs sm:text-sm font-black tracking-wider text-[#00ff41]"><span>✓</span><span>CLEAR</span></span>`
+        : isCurrent
+        ? `<span class="font-code text-xs font-black tracking-[0.18em] text-[#00ff41]">ACTIVE</span>`
+        : `<span class="inline-flex items-center gap-1 text-slate-500 font-code text-xs font-bold">${LOCK_ICON_SVG}<span>LOCKED</span></span>`;
+
+      const iconColorClass = isLocked
+        ? 'text-slate-600'
+        : st.category === 'boss'
+        ? 'text-[#00ff41]'
+        : 'text-[#00ff41]/90';
+
+      const card = document.createElement('button');
+      card.type = 'button';
+      card.className = `stage-card w-full ${
+        isCurrent
+          ? 'stage-card-active'
+          : isCleared
+          ? 'stage-card-cleared'
+          : 'stage-card-locked'
+      }`;
+
+      card.innerHTML = `
+        <svg class="stage-card-border-svg" viewBox="0 0 360 200" preserveAspectRatio="none" aria-hidden="true">
+          <polygon
+            points="14,1 346,1 359,14 359,186 346,199 14,199 1,186 1,14"
+            fill="none"
+            stroke="${borderStroke}"
+            stroke-opacity="${borderOpacity}"
+            stroke-width="${borderWidth}"
+            vector-effect="non-scaling-stroke"
+          />
+          <polygon points="342,199 359,182 359,199" fill="${cornerAccentColor}" fill-opacity="${isCurrent ? '0.88' : '0.45'}"/>
+          <line x1="18" y1="62" x2="108" y2="62" stroke="${cornerAccentColor}" stroke-opacity="0.28" stroke-width="1" vector-effect="non-scaling-stroke"/>
+          <line x1="108" y1="62" x2="122" y2="48" stroke="${cornerAccentColor}" stroke-opacity="0.28" stroke-width="1" vector-effect="non-scaling-stroke"/>
+          <line x1="122" y1="48" x2="215" y2="48" stroke="${cornerAccentColor}" stroke-opacity="0.22" stroke-width="1" vector-effect="non-scaling-stroke"/>
+        </svg>
+
+        <!-- Top Row: 2-digit Stage Number (Left) & Status (Right) -->
+        <div class="relative z-10 flex items-center justify-between w-full">
+          <span class="font-code text-2xl sm:text-3xl font-black tracking-wider tabular-nums ${
+            isLocked ? 'text-slate-500' : 'text-white'
+          }">${numLabel}</span>
+          ${statusHtml}
+        </div>
+
+        <!-- Bottom Row: Title & 1-Line Description (Left) + Large Game-Type Neon SVG Icon (Right) -->
+        <div class="relative z-10 flex items-end justify-between gap-4 mt-5">
+          <div class="min-w-0 flex-1 space-y-1.5">
+            <div class="text-base sm:text-lg font-extrabold tracking-tight truncate ${
+              isLocked ? 'text-slate-500' : 'text-white'
+            }">${st.name}</div>
+            <p class="text-xs leading-snug line-clamp-2 ${
+              isLocked ? 'text-slate-600' : 'text-slate-300/85'
+            }">${st.gimmick}</p>
           </div>
-          <div class="text-xs font-bold text-white truncate mt-2">${st.name}</div>
-          <div class="text-[10px] ${st.category === 'boss' ? 'text-[#ff4da6] font-bold' : 'text-slate-400'} truncate">${st.categoryLabel}</div>
-        `;
-        btn.addEventListener('click', () => {
-          audio.hitSuccess();
-          launchStage(stageNum);
-        });
-      } else if (isCurrent) {
-        // 2. 현재 도전할 단계 (stageNum === unlockedStage): 절대 CLEAR 표시 금지, 형광 녹색 테두리 깜빡임
-        btn.className =
-          'p-3.5 rounded-md border-2 text-left flex flex-col justify-between min-h-[94px] cursor-pointer transition-transform duration-150 stage-current-glow bg-[#0b1f12] border-[#00ff41]';
-        btn.innerHTML = `
-          <div class="flex items-center justify-between w-full">
-            <span class="text-lg font-black tabular-nums font-code text-[#00ff41]">${String(stageNum).padStart(2, '0')}</span>
-            <span class="text-[10px] font-bold font-code text-[#00ff41] tracking-wider">도전 중</span>
+          <div class="shrink-0 ${iconColorClass}">
+            ${iconSvg}
           </div>
-          <div class="text-xs font-bold text-white truncate mt-2">${st.name}</div>
-          <div class="text-[10px] ${st.category === 'boss' ? 'text-[#ff4da6] font-bold' : 'text-emerald-300/80'} truncate">${st.categoryLabel}</div>
-        `;
-        btn.addEventListener('click', () => {
-          audio.hitSuccess();
-          launchStage(stageNum);
+        </div>
+      `;
+
+      if (isLocked) {
+        card.addEventListener('click', () => {
+          audio.errorBuzz();
+          card.classList.remove('shake-error');
+          void card.offsetWidth;
+          card.classList.add('shake-error');
         });
       } else {
-        // 3. 잠긴 단계 (stageNum > unlockedStage): 자물쇠 아이콘만 표시, 클릭 시 경고음 + 흔들림
-        btn.className =
-          'p-3.5 rounded-md border text-left flex flex-col justify-between min-h-[94px] cursor-pointer transition-transform duration-150 bg-[#0d0f14] border-white/10 opacity-65';
-        btn.innerHTML = `
-          <div class="flex items-center justify-between w-full">
-            <span class="text-lg font-black tabular-nums font-code text-slate-500">${String(stageNum).padStart(2, '0')}</span>
-            <span class="text-sm">🔒</span>
-          </div>
-          <div class="text-xs font-bold text-slate-500 truncate mt-2">${st.name}</div>
-          <div class="text-[10px] text-slate-600">LOCKED</div>
-        `;
-        btn.addEventListener('click', () => {
-          audio.errorBuzz();
-          btn.classList.remove('shake-error');
-          void btn.offsetWidth;
-          btn.classList.add('shake-error');
+        card.addEventListener('click', () => {
+          audio.hitSuccess();
+          launchStage(stageNum);
         });
       }
-      stageGrid.appendChild(btn);
+
+      if (isCurrent) {
+        const wrap = document.createElement('div');
+        wrap.className = 'stage-card-active-wrap';
+        wrap.appendChild(card);
+        stageGrid.appendChild(wrap);
+      } else {
+        stageGrid.appendChild(card);
+      }
     });
   };
+
+  btnStagePrev.addEventListener('click', () => {
+    if (currentStagePage <= 1) return;
+    audio.keyClick();
+    currentStagePage--;
+    renderStageSelect(false);
+  });
+
+  btnStageNext.addEventListener('click', () => {
+    if (currentStagePage >= TOTAL_STAGE_PAGES) return;
+    const targetPage = currentStagePage + 1;
+    if (!isStagePageUnlocked(targetPage)) {
+      showLockedPageToast(btnStageNext);
+      return;
+    }
+    audio.keyClick();
+    currentStagePage = targetPage;
+    renderStageSelect(false);
+  });
 
   // ---------------------------------------------------------------------------
   // 4. IN-GAME LAUNCH & STAGE CLEAR HANDLER
